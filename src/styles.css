@@ -1,0 +1,160 @@
+:root {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+[data-mantine-color-scheme='light'] {
+  color-scheme: light;
+  --budget-page-bg: #eef2f1;
+  --budget-page-gradient: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.8),
+    rgba(238, 242, 241, 0.95)
+  );
+  --budget-header-bg: rgba(255, 255, 255, 0.92);
+  --budget-panel-bg: rgba(255, 255, 255, 0.94);
+  --budget-border: rgba(24, 58, 55, 0.1);
+  --budget-shadow: 0 12px 28px rgba(39, 58, 64, 0.06);
+  --budget-strong-text: #163230;
+  --budget-empty-bg: rgba(238, 242, 241, 0.56);
+  --budget-empty-border: rgba(24, 58, 55, 0.24);
+  --budget-empty-text: #60706d;
+}
+
+[data-mantine-color-scheme='dark'] {
+  color-scheme: dark;
+  --budget-page-bg: #121212;
+  --budget-page-gradient: linear-gradient(180deg, rgba(31, 31, 31, 0.96), rgba(18, 18, 18, 1));
+  --budget-header-bg: rgba(24, 24, 24, 0.92);
+  --budget-panel-bg: rgba(30, 30, 30, 0.96);
+  --budget-border: rgba(255, 255, 255, 0.11);
+  --budget-shadow: 0 14px 32px rgba(0, 0, 0, 0.28);
+  --budget-strong-text: var(--mantine-color-gray-0);
+  --budget-empty-bg: rgba(38, 38, 38, 0.72);
+  --budget-empty-border: rgba(255, 255, 255, 0.16);
+  --budget-empty-text: var(--mantine-color-gray-4);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--budget-page-gradient), var(--budget-page-bg);
+}
+
+.app-header {
+  padding: 0 clamp(16px, 4vw, 34px);
+  background: var(--budget-header-bg);
+  backdrop-filter: blur(12px);
+}
+
+.app-title {
+  font-size: clamp(1.15rem, 2vw, 1.55rem);
+  line-height: 1.1;
+}
+
+.header-actions {
+  flex-shrink: 0;
+}
+
+.workspace {
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.tabs-list {
+  gap: 8px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  padding-bottom: 2px;
+}
+
+.metric-tile,
+.panel,
+.empty-month-panel {
+  border-color: var(--budget-border);
+  background: var(--budget-panel-bg);
+  box-shadow: var(--budget-shadow);
+}
+
+.metric-tile {
+  min-height: 132px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.metric-value {
+  font-size: clamp(1.7rem, 4vw, 2.45rem);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--budget-strong-text);
+}
+
+.panel {
+  padding: clamp(16px, 3vw, 22px);
+  min-width: 0;
+}
+
+.empty-month-panel {
+  padding: 16px 18px;
+}
+
+.wide-panel,
+.table-panel {
+  grid-column: 1 / -1;
+}
+
+.form-panel {
+  align-self: start;
+}
+
+.table-panel {
+  min-height: 620px;
+}
+
+.empty-state {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--budget-empty-border);
+  border-radius: 8px;
+  color: var(--budget-empty-text);
+  background: var(--budget-empty-bg);
+  text-align: center;
+  padding: 24px;
+}
+
+.mantine-Table-table {
+  min-width: 780px;
+}
+
+@media (max-width: 720px) {
+  .app-header {
+    height: auto;
+    min-height: 92px;
+    padding-block: 10px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+    overflow-x: auto;
+  }
+
+  .app-header > .mantine-Group-root {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .mantine-AppShell-main {
+    padding-inline: 12px;
+  }
+}
