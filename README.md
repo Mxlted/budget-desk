@@ -4,6 +4,8 @@ Budget Desk is a local-first monthly budgeting app for tracking spending, income
 
 Your data stays on your machine in browser storage. You can export it to a JSON backup file and import it again later.
 
+<img width="1384" height="1507" alt="070526_1778194108" src="https://github.com/user-attachments/assets/3c939bb7-1028-408a-91c1-d736ff02324f" />
+
 ## What It Can Do
 
 - Track one-time purchases and income by month.
