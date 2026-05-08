@@ -181,30 +181,42 @@ export const monthTransactions = (state: BudgetState, month: string) => {
 
 export const summarizeMonth = (state: BudgetState, month: string) => {
   const rows = monthTransactions(state, month);
-  const actualIncome = sumCurrency(
-    rows.filter((item) => item.type === 'income').map((item) => item.amount),
-  );
+  let actualIncomeCents = 0;
+  let expensesCents = 0;
+  let recurringCents = 0;
+  let recurringIncomeCents = 0;
+  let manualExpensesCents = 0;
+
+  rows.forEach((item) => {
+    const cents = toCurrencyCents(item.amount);
+
+    if (item.type === 'income') {
+      actualIncomeCents += cents;
+
+      if (item.source === 'recurring') {
+        recurringIncomeCents += cents;
+      }
+
+      return;
+    }
+
+    expensesCents += cents;
+
+    if (item.source === 'recurring') {
+      recurringCents += cents;
+    } else {
+      manualExpensesCents += cents;
+    }
+  });
+
+  const actualIncome = fromCurrencyCents(actualIncomeCents);
   const plannedIncome = Math.max(0, normalizeCurrencyAmount(state.plannedMonthlyIncome));
   const usesPlannedIncome = actualIncome <= 0 && plannedIncome > 0;
   const income = usesPlannedIncome ? plannedIncome : actualIncome;
-  const expenses = sumCurrency(
-    rows.filter((item) => item.type === 'expense').map((item) => item.amount),
-  );
-  const recurring = sumCurrency(
-    rows
-      .filter((item) => item.source === 'recurring' && item.type === 'expense')
-      .map((item) => item.amount),
-  );
-  const recurringIncome = sumCurrency(
-    rows
-      .filter((item) => item.source === 'recurring' && item.type === 'income')
-      .map((item) => item.amount),
-  );
-  const manualExpenses = sumCurrency(
-    rows
-      .filter((item) => item.source !== 'recurring' && item.type === 'expense')
-      .map((item) => item.amount),
-  );
+  const expenses = fromCurrencyCents(expensesCents);
+  const recurring = fromCurrencyCents(recurringCents);
+  const recurringIncome = fromCurrencyCents(recurringIncomeCents);
+  const manualExpenses = fromCurrencyCents(manualExpensesCents);
   const remaining = normalizeCurrencyAmount(income - expenses);
 
   return {
@@ -225,6 +237,7 @@ export const summarizeMonth = (state: BudgetState, month: string) => {
 export const categoryBreakdown = (state: BudgetState, month: string) => {
   const rows = monthTransactions(state, month).filter((item) => item.type === 'expense');
   const totals = new Map<string, number>();
+  const colors = new Map(state.budgets.map((item) => [item.category, item.color]));
 
   rows.forEach((item) => {
     totals.set(item.category, (totals.get(item.category) ?? 0) + toCurrencyCents(item.amount));
@@ -235,13 +248,14 @@ export const categoryBreakdown = (state: BudgetState, month: string) => {
       category,
       name: category,
       value: fromCurrencyCents(cents),
-      color: state.budgets.find((item) => item.category === category)?.color ?? 'gray.6',
+      color: colors.get(category) ?? 'gray.6',
     }))
     .sort((a, b) => b.value - a.value);
 };
 
 export const categoryBreakdownForMonths = (state: BudgetState, months: string[]) => {
   const totals = new Map<string, number>();
+  const colors = new Map(state.budgets.map((item) => [item.category, item.color]));
 
   months.forEach((month) => {
     monthTransactions(state, month)
@@ -256,7 +270,7 @@ export const categoryBreakdownForMonths = (state: BudgetState, months: string[])
       category,
       name: category,
       value: fromCurrencyCents(cents),
-      color: state.budgets.find((item) => item.category === category)?.color ?? 'gray.6',
+      color: colors.get(category) ?? 'gray.6',
     }))
     .sort((a, b) => b.value - a.value);
 };
@@ -335,12 +349,16 @@ export const yearlySummary = (state: BudgetState, selectedMonth: string) => {
   };
 };
 
-export const budgetBars = (state: BudgetState, month: string) => {
-  const breakdown = categoryBreakdown(state, month);
+export const budgetBars = (
+  state: BudgetState,
+  month: string,
+  breakdown = categoryBreakdown(state, month),
+) => {
+  const spentByCategory = new Map(breakdown.map((item) => [item.category, item.value]));
 
   return state.budgets
     .map((budget) => {
-      const spent = breakdown.find((item) => item.category === budget.category)?.value ?? 0;
+      const spent = spentByCategory.get(budget.category) ?? 0;
       const monthlyLimit = normalizeCurrencyAmount(budget.monthlyLimit);
 
       return {

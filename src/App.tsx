@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AppShell,
   Box,
@@ -35,10 +35,6 @@ import { useTabNavigation } from './hooks/useTabNavigation';
 import { AppHeader } from './components/AppHeader';
 import { ConfirmModal, type ConfirmDetails } from './components/ConfirmModal';
 import { MetricTile } from './components/MetricTile';
-import { DashboardTab } from './components/tabs/DashboardTab';
-import { PurchasesTab } from './components/tabs/PurchasesTab';
-import { MonthlyTab } from './components/tabs/MonthlyTab';
-import { DataTab } from './components/tabs/DataTab';
 import { BudgetLimitsPanel } from './components/BudgetLimitsPanel';
 import type {
   BudgetCategory,
@@ -99,6 +95,19 @@ const profileFileSlug = (value: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '') || 'budget';
 
+const DashboardTab = lazy(() =>
+  import('./components/tabs/DashboardTab').then((module) => ({ default: module.DashboardTab })),
+);
+const PurchasesTab = lazy(() =>
+  import('./components/tabs/PurchasesTab').then((module) => ({ default: module.PurchasesTab })),
+);
+const MonthlyTab = lazy(() =>
+  import('./components/tabs/MonthlyTab').then((module) => ({ default: module.MonthlyTab })),
+);
+const DataTab = lazy(() =>
+  import('./components/tabs/DataTab').then((module) => ({ default: module.DataTab })),
+);
+
 function AppContent() {
   const {
     state,
@@ -124,14 +133,22 @@ function AppContent() {
 
   // ─── Memoized derived state ──────────────────────────────────────────────
   const monthSummary = useMemo(() => summarizeMonth(state, selectedMonth), [state, selectedMonth]);
-  const breakdown = useMemo(() => categoryBreakdown(state, selectedMonth), [state, selectedMonth]);
-  const bars = useMemo(() => budgetBars(state, selectedMonth), [state, selectedMonth]);
-  const trend = useMemo(() => trendData(state, selectedMonth), [state, selectedMonth]);
-  const yearSummary = useMemo(() => yearlySummary(state, selectedMonth), [state, selectedMonth]);
-  const yearlyBreakdown = useMemo(
-    () => categoryBreakdownForMonths(state, yearSummary.months),
-    [state, yearSummary.months],
-  );
+  const dashboardData = useMemo(() => {
+    if (activeTab !== 'dashboard') {
+      return null;
+    }
+
+    const breakdown = categoryBreakdown(state, selectedMonth);
+    const yearSummary = yearlySummary(state, selectedMonth);
+
+    return {
+      breakdown,
+      bars: budgetBars(state, selectedMonth, breakdown),
+      trend: trendData(state, selectedMonth),
+      yearSummary,
+      yearlyBreakdown: categoryBreakdownForMonths(state, yearSummary.months),
+    };
+  }, [activeTab, state, selectedMonth]);
 
   const categoryOptions = useMemo(
     () => state.budgets.map((item) => ({ value: item.category, label: item.category })),
@@ -156,15 +173,24 @@ function AppContent() {
   const categoryLimitsEnabled = state.categoryLimitsEnabled;
 
   const filteredTransactions = useMemo(
-    () =>
-      monthSummary.rows.filter((item) => {
-        const matchesSearch = `${item.merchant} ${item.category} ${item.account}`
-          .toLowerCase()
-          .includes(query.toLowerCase());
+    () => {
+      if (activeTab !== 'transactions') {
+        return [];
+      }
+
+      const searchQuery = query.trim().toLowerCase();
+
+      return monthSummary.rows.filter((item) => {
+        const matchesSearch =
+          searchQuery.length === 0 ||
+          `${item.merchant} ${item.category} ${item.account}`
+            .toLowerCase()
+            .includes(searchQuery);
         const matchesCategory = !categoryFilter || item.category === categoryFilter;
         return matchesSearch && matchesCategory;
-      }),
-    [monthSummary.rows, query, categoryFilter],
+      });
+    },
+    [activeTab, monthSummary.rows, query, categoryFilter],
   );
 
   useEffect(() => {
@@ -730,52 +756,64 @@ function AppContent() {
               </Tabs.List>
 
               <Tabs.Panel value="dashboard" pt="lg">
-                <DashboardTab
-                  selectedMonth={selectedMonth}
-                  monthSummary={monthSummary}
-                  trend={trend}
-                  breakdown={breakdown}
-                  yearlySummary={yearSummary}
-                  yearlyBreakdown={yearlyBreakdown}
-                  bars={bars}
-                  categoryLimitsEnabled={categoryLimitsEnabled}
-                  hasCategoryLimitValues={hasCategoryLimitValues}
-                  savingsGoals={state.savingsGoals}
-                  onUpdateGoalSaved={handleUpdateGoalSaved}
-                  onResetCategoryLimits={() => setConfirmAction('reset-category-limits-zero')}
-                  onRestoreCategoryLimits={() => setConfirmAction('restore-category-limits')}
-                />
+                {activeTab === 'dashboard' && dashboardData ? (
+                  <Suspense fallback={null}>
+                    <DashboardTab
+                      selectedMonth={selectedMonth}
+                      monthSummary={monthSummary}
+                      trend={dashboardData.trend}
+                      breakdown={dashboardData.breakdown}
+                      yearlySummary={dashboardData.yearSummary}
+                      yearlyBreakdown={dashboardData.yearlyBreakdown}
+                      bars={dashboardData.bars}
+                      categoryLimitsEnabled={categoryLimitsEnabled}
+                      hasCategoryLimitValues={hasCategoryLimitValues}
+                      savingsGoals={state.savingsGoals}
+                      onUpdateGoalSaved={handleUpdateGoalSaved}
+                      onResetCategoryLimits={() => setConfirmAction('reset-category-limits-zero')}
+                      onRestoreCategoryLimits={() => setConfirmAction('restore-category-limits')}
+                    />
+                  </Suspense>
+                ) : null}
               </Tabs.Panel>
 
               <Tabs.Panel value="transactions" pt="lg">
-                <PurchasesTab
-                  selectedMonth={selectedMonth}
-                  filteredTransactions={filteredTransactions}
-                  query={query}
-                  onQueryChange={setQuery}
-                  categoryFilter={categoryFilter}
-                  onCategoryFilterChange={setCategoryFilter}
-                  categoryOptions={categoryOptions}
-                  accountOptions={accountOptions}
-                  onAddTransaction={handleAddTransaction}
-                  onUpdateTransaction={handleUpdateTransaction}
-                  onRemoveTransaction={handleRemoveTransaction}
-                  onFormError={showError}
-                />
+                {activeTab === 'transactions' ? (
+                  <Suspense fallback={null}>
+                    <PurchasesTab
+                      selectedMonth={selectedMonth}
+                      filteredTransactions={filteredTransactions}
+                      query={query}
+                      onQueryChange={setQuery}
+                      categoryFilter={categoryFilter}
+                      onCategoryFilterChange={setCategoryFilter}
+                      categoryOptions={categoryOptions}
+                      accountOptions={accountOptions}
+                      onAddTransaction={handleAddTransaction}
+                      onUpdateTransaction={handleUpdateTransaction}
+                      onRemoveTransaction={handleRemoveTransaction}
+                      onFormError={showError}
+                    />
+                  </Suspense>
+                ) : null}
               </Tabs.Panel>
 
               <Tabs.Panel value="recurring" pt="lg">
-                <MonthlyTab
-                  selectedMonth={selectedMonth}
-                  recurring={state.recurring}
-                  categoryOptions={categoryOptions}
-                  accountOptions={accountOptions}
-                  onAddRecurring={handleAddRecurring}
-                  onUpdateRecurring={handleUpdateRecurring}
-                  onToggleRecurring={handleToggleRecurring}
-                  onRemoveRecurring={handleRemoveRecurring}
-                  onFormError={showError}
-                />
+                {activeTab === 'recurring' ? (
+                  <Suspense fallback={null}>
+                    <MonthlyTab
+                      selectedMonth={selectedMonth}
+                      recurring={state.recurring}
+                      categoryOptions={categoryOptions}
+                      accountOptions={accountOptions}
+                      onAddRecurring={handleAddRecurring}
+                      onUpdateRecurring={handleUpdateRecurring}
+                      onToggleRecurring={handleToggleRecurring}
+                      onRemoveRecurring={handleRemoveRecurring}
+                      onFormError={showError}
+                    />
+                  </Suspense>
+                ) : null}
               </Tabs.Panel>
 
               <Tabs.Panel value="categories" pt="lg">
@@ -793,26 +831,30 @@ function AppContent() {
               </Tabs.Panel>
 
               <Tabs.Panel value="data" pt="lg">
-                <DataTab
-                  profiles={profiles}
-                  activeProfileId={activeProfileId}
-                  onSelectProfile={handleSelectProfile}
-                  onCreateProfile={handleCreateProfile}
-                  onRenameProfile={handleRenameActiveProfile}
-                  onDeleteProfile={() => setConfirmAction('delete-profile')}
-                  importPreview={importPreview}
-                  statementType={statementType}
-                  onStatementTypeChange={setStatementType}
-                  importAccount={importAccount}
-                  onImportAccountChange={setImportAccount}
-                  accountOptions={accountOptions}
-                  onPreviewStatement={handlePreviewStatement}
-                  onImportRows={handleImportRows}
-                  onExport={handleExport}
-                  onImportData={handleImportData}
-                  onClearData={() => setConfirmAction('clear')}
-                  onResetSampleData={() => setConfirmAction('reset')}
-                />
+                {activeTab === 'data' ? (
+                  <Suspense fallback={null}>
+                    <DataTab
+                      profiles={profiles}
+                      activeProfileId={activeProfileId}
+                      onSelectProfile={handleSelectProfile}
+                      onCreateProfile={handleCreateProfile}
+                      onRenameProfile={handleRenameActiveProfile}
+                      onDeleteProfile={() => setConfirmAction('delete-profile')}
+                      importPreview={importPreview}
+                      statementType={statementType}
+                      onStatementTypeChange={setStatementType}
+                      importAccount={importAccount}
+                      onImportAccountChange={setImportAccount}
+                      accountOptions={accountOptions}
+                      onPreviewStatement={handlePreviewStatement}
+                      onImportRows={handleImportRows}
+                      onExport={handleExport}
+                      onImportData={handleImportData}
+                      onClearData={() => setConfirmAction('clear')}
+                      onResetSampleData={() => setConfirmAction('reset')}
+                    />
+                  </Suspense>
+                ) : null}
               </Tabs.Panel>
             </Tabs>
           </Stack>

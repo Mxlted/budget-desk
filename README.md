@@ -59,6 +59,43 @@ Preview that build locally:
 npm run preview
 ```
 
+## Build The Desktop App
+
+Budget Desk can also be packaged as a Windows desktop app with Electron.
+
+Run the app in the Electron shell:
+
+```bash
+npm run desktop
+```
+
+Create an unpacked executable folder:
+
+```bash
+npm run desktop:dir
+```
+
+The executable is written to:
+
+```text
+release/win-unpacked/Budget Desk.exe
+```
+
+Create a Windows installer:
+
+```bash
+npm run desktop:installer
+```
+
+The installer is written to:
+
+```text
+release/Budget Desk-0.1.0-x64-Setup.exe
+```
+
+The local desktop build is unsigned, so Windows may show a trust warning the first time it is opened.
+The desktop app keeps its own local data separate from the browser version; use JSON export and import to move a budget between them.
+
 ## Notes
 
 Statement import works best with CSV files that include date, description or merchant, and either amount or debit/credit columns.
