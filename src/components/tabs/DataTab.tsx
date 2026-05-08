@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Box,
   Button,
@@ -22,16 +22,25 @@ import {
   Download,
   FileDown,
   FileSpreadsheet,
+  Pencil,
+  Plus,
   RefreshCcw,
   Trash2,
   Upload,
+  Users,
 } from 'lucide-react';
 import { preciseCurrency } from '../../budgetMath';
-import type { StatementRow } from '../../types';
+import type { BudgetProfile, BudgetProfileTemplate, StatementRow } from '../../types';
 
 const PREVIEW_LIMIT = 25;
 
 interface DataTabProps {
+  profiles: BudgetProfile[];
+  activeProfileId: string;
+  onSelectProfile: (profileId: string) => void;
+  onCreateProfile: (name: string, template: BudgetProfileTemplate) => boolean;
+  onRenameProfile: (name: string) => boolean;
+  onDeleteProfile: () => void;
   importPreview: StatementRow[];
   statementType: 'bank' | 'credit-card';
   onStatementTypeChange: (value: 'bank' | 'credit-card') => void;
@@ -47,6 +56,12 @@ interface DataTabProps {
 }
 
 export function DataTab({
+  profiles,
+  activeProfileId,
+  onSelectProfile,
+  onCreateProfile,
+  onRenameProfile,
+  onDeleteProfile,
   importPreview,
   statementType,
   onStatementTypeChange,
@@ -64,9 +79,98 @@ export function DataTab({
   // so the same file can be reselected without confusion.
   const [statementInputKey, setStatementInputKey] = useState(0);
   const [backupInputKey, setBackupInputKey] = useState(0);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [profileTemplate, setProfileTemplate] = useState<BudgetProfileTemplate>('empty');
+  const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0];
+  const [renameProfileName, setRenameProfileName] = useState(activeProfile?.name ?? '');
+  const profileOptions = profiles.map((profile) => ({ value: profile.id, label: profile.name }));
+
+  useEffect(() => {
+    setRenameProfileName(activeProfile?.name ?? '');
+  }, [activeProfile?.id, activeProfile?.name]);
 
   return (
     <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="md">
+      <Paper className="panel" withBorder>
+        <Group mb="md" gap="sm">
+          <ThemeIcon color="blue" variant="light">
+            <Users size={18} />
+          </ThemeIcon>
+          <Title order={3}>Budget profiles</Title>
+        </Group>
+
+        <Stack gap="sm">
+          <Text size="sm" c="dimmed">
+            Profiles keep separate budgets on this same domain, including transactions, monthly
+            items, categories, goals, and imports.
+          </Text>
+          <Select
+            label="Current profile"
+            data={profileOptions}
+            value={activeProfileId}
+            allowDeselect={false}
+            onChange={(value) => {
+              if (value) {
+                onSelectProfile(value);
+              }
+            }}
+          />
+          <TextInput
+            label="New profile"
+            placeholder="Parents, personal, trip planning..."
+            value={newProfileName}
+            onChange={(event) => setNewProfileName(event.currentTarget.value)}
+          />
+          <SegmentedControl
+            value={profileTemplate}
+            onChange={(value) => setProfileTemplate(value as BudgetProfileTemplate)}
+            data={[
+              { label: 'Blank', value: 'empty' },
+              { label: 'Sample', value: 'sample' },
+              { label: 'Copy current', value: 'current' },
+            ]}
+          />
+          <Button
+            leftSection={<Plus size={16} />}
+            disabled={!newProfileName.trim()}
+            onClick={() => {
+              const created = onCreateProfile(newProfileName, profileTemplate);
+              if (created) {
+                setNewProfileName('');
+                setProfileTemplate('empty');
+              }
+            }}
+          >
+            Create profile
+          </Button>
+          <Divider />
+          <TextInput
+            label="Rename current profile"
+            value={renameProfileName}
+            onChange={(event) => setRenameProfileName(event.currentTarget.value)}
+          />
+          <Group grow>
+            <Button
+              variant="default"
+              leftSection={<Pencil size={16} />}
+              disabled={!renameProfileName.trim() || renameProfileName === activeProfile?.name}
+              onClick={() => onRenameProfile(renameProfileName)}
+            >
+              Rename
+            </Button>
+            <Button
+              color="red"
+              variant="light"
+              leftSection={<Trash2 size={16} />}
+              disabled={profiles.length <= 1}
+              onClick={onDeleteProfile}
+            >
+              Delete
+            </Button>
+          </Group>
+        </Stack>
+      </Paper>
+
       <Paper className="panel" withBorder>
         <Group mb="md" gap="sm">
           <ThemeIcon color="blue" variant="light">
@@ -126,17 +230,17 @@ export function DataTab({
 
         <Stack gap="sm">
           <Text size="sm" c="dimmed">
-            This app saves to localStorage, not cookies. Localhost and 127.0.0.1 also keep separate
-            saved data.
+            This app saves budget profiles to localStorage, not cookies. Localhost and 127.0.0.1
+            also keep separate saved data.
           </Text>
           <Button variant="light" leftSection={<Download size={16} />} onClick={onExport}>
-            Export JSON backup
+            Export current profile
           </Button>
           <FileInput
             key={backupInputKey}
             clearable
             accept="application/json,.json"
-            label="Restore backup"
+            label="Restore into current profile"
             placeholder="Choose Budget Desk JSON"
             leftSection={<Upload size={16} />}
             onChange={async (file) => {

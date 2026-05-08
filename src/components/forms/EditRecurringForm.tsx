@@ -13,12 +13,17 @@ import {
 } from '@mantine/core';
 import { MonthPickerInput } from '@mantine/dates';
 import { Check, Pencil, X } from 'lucide-react';
-import {
-  normalizeCurrencyAmount,
-  parseFiniteNumber,
-  type NumericInputValue,
-} from '../../amounts';
+import { normalizeCurrencyAmount, type NumericInputValue } from '../../amounts';
 import { normalizeMonthKey } from '../../budgetMath';
+import {
+  clampDayOfMonth,
+  dateToMonthKey,
+  getExpenseCategoryOptions,
+  getFallbackExpenseCategory,
+  inputValueToDate,
+  monthKeyToDate,
+  resolveTypedCategory,
+} from '../../formHelpers';
 import type { RecurringPurchase, TransactionType } from '../../types';
 
 interface EditRecurringFormProps {
@@ -43,18 +48,6 @@ interface RecurringDraft {
   notes: string;
 }
 
-const monthKeyToDate = (month: string): Date | null => {
-  if (!month) return null;
-  const [year, m] = normalizeMonthKey(month).split('-').map(Number);
-  return new Date(year, m - 1, 1, 12, 0, 0);
-};
-
-const dateToMonthKey = (date: Date): string => {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  return `${y}-${m}`;
-};
-
 const draftFromRecurring = (item: RecurringPurchase): RecurringDraft => ({
   merchant: item.merchant,
   category: item.category,
@@ -77,10 +70,10 @@ export function EditRecurringForm({
   onError,
 }: EditRecurringFormProps) {
   const expenseCategoryOptions = useMemo(
-    () => categoryOptions.filter((option) => option.value !== 'Income'),
+    () => getExpenseCategoryOptions(categoryOptions),
     [categoryOptions],
   );
-  const fallbackCategory = expenseCategoryOptions[0]?.value ?? 'Other';
+  const fallbackCategory = getFallbackExpenseCategory(expenseCategoryOptions);
   const [recurring, setRecurring] = useState(() => draftFromRecurring(item));
 
   useEffect(() => {
@@ -89,12 +82,17 @@ export function EditRecurringForm({
 
   useEffect(() => {
     setRecurring((current) => {
-      const categoryExists = expenseCategoryOptions.some((option) => option.value === current.category);
-      if (current.type === 'income' || categoryExists) {
+      const category = resolveTypedCategory(
+        current.type,
+        current.category,
+        expenseCategoryOptions,
+        fallbackCategory,
+      );
+      if (category === current.category) {
         return current;
       }
 
-      return { ...current, category: fallbackCategory };
+      return { ...current, category };
     });
   }, [expenseCategoryOptions, fallbackCategory]);
 
@@ -112,7 +110,12 @@ export function EditRecurringForm({
     onSave({
       ...item,
       merchant: recurring.merchant.trim(),
-      category: recurring.type === 'income' ? 'Income' : recurring.category,
+      category: resolveTypedCategory(
+        recurring.type,
+        recurring.category,
+        expenseCategoryOptions,
+        fallbackCategory,
+      ),
       amount,
       type: recurring.type,
       day: recurring.day,
@@ -141,12 +144,12 @@ export function EditRecurringForm({
             setRecurring((current) => ({
               ...current,
               type: value as TransactionType,
-              category:
-                value === 'income'
-                  ? 'Income'
-                  : expenseCategoryOptions.some((option) => option.value === current.category)
-                    ? current.category
-                    : fallbackCategory,
+              category: resolveTypedCategory(
+                value as TransactionType,
+                current.category,
+                expenseCategoryOptions,
+                fallbackCategory,
+              ),
             }))
           }
           data={[
@@ -187,7 +190,7 @@ export function EditRecurringForm({
           onChange={(value) =>
             setRecurring((current) => ({
               ...current,
-              day: Math.min(31, Math.max(1, Math.round(parseFiniteNumber(value, 1)))),
+              day: clampDayOfMonth(value),
             }))
           }
         />
@@ -217,9 +220,8 @@ export function EditRecurringForm({
           value={monthKeyToDate(recurring.startMonth)}
           valueFormat="YYYY-MM"
           onChange={(value) => {
-            if (!value) return;
-            const date = typeof value === 'string' ? new Date(value) : value;
-            if (date instanceof Date && !Number.isNaN(date.getTime())) {
+            const date = inputValueToDate(value);
+            if (date) {
               setRecurring((current) => ({ ...current, startMonth: dateToMonthKey(date) }));
             }
           }}
@@ -235,8 +237,8 @@ export function EditRecurringForm({
               setRecurring((current) => ({ ...current, endMonth: '' }));
               return;
             }
-            const date = typeof value === 'string' ? new Date(value) : value;
-            if (date instanceof Date && !Number.isNaN(date.getTime())) {
+            const date = inputValueToDate(value);
+            if (date) {
               setRecurring((current) => ({ ...current, endMonth: dateToMonthKey(date) }));
             }
           }}

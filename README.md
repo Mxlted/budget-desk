@@ -10,6 +10,7 @@ Your data stays on your machine in browser storage. You can export it to a JSON 
 
 - Track one-time purchases and income by month.
 - Add recurring bills, subscriptions, transfers, or recurring income.
+- Switch between separate local budget profiles on the same domain.
 - Move between months and see scheduled recurring items automatically.
 - Search and filter transactions by merchant, category, or account.
 - Compare spending against category limits.

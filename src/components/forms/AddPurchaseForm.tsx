@@ -15,6 +15,14 @@ import { DateInput } from '@mantine/dates';
 import { Check, Plus } from 'lucide-react';
 import { normalizeCurrencyAmount, type NumericInputValue } from '../../amounts';
 import { currentMonthKey, makeId } from '../../budgetMath';
+import {
+  dateToISO,
+  getExpenseCategoryOptions,
+  getFallbackExpenseCategory,
+  inputValueToDate,
+  parseISODate,
+  resolveTypedCategory,
+} from '../../formHelpers';
 import type { Transaction, TransactionType } from '../../types';
 
 interface AddPurchaseFormProps {
@@ -45,20 +53,6 @@ const emptyPurchase = (month = currentMonthKey(), category = 'Groceries'): Purch
   notes: '',
 });
 
-const parseISODate = (iso: string): Date | null => {
-  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-  const [, y, m, d] = match;
-  return new Date(Number(y), Number(m) - 1, Number(d), 12, 0, 0);
-};
-
-const dateToISO = (date: Date): string => {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-};
-
 export function AddPurchaseForm({
   selectedMonth,
   categoryOptions,
@@ -67,20 +61,25 @@ export function AddPurchaseForm({
   onError,
 }: AddPurchaseFormProps) {
   const expenseCategoryOptions = useMemo(
-    () => categoryOptions.filter((item) => item.value !== 'Income'),
+    () => getExpenseCategoryOptions(categoryOptions),
     [categoryOptions],
   );
-  const fallbackCategory = expenseCategoryOptions[0]?.value ?? 'Other';
+  const fallbackCategory = getFallbackExpenseCategory(expenseCategoryOptions);
   const [purchase, setPurchase] = useState(() => emptyPurchase(selectedMonth, fallbackCategory));
 
   useEffect(() => {
     setPurchase((current) => {
-      const categoryExists = expenseCategoryOptions.some((item) => item.value === current.category);
-      if (current.type === 'income' || categoryExists) {
+      const category = resolveTypedCategory(
+        current.type,
+        current.category,
+        expenseCategoryOptions,
+        fallbackCategory,
+      );
+      if (category === current.category) {
         return current;
       }
 
-      return { ...current, category: fallbackCategory };
+      return { ...current, category };
     });
   }, [expenseCategoryOptions, fallbackCategory]);
 
@@ -99,7 +98,12 @@ export function AddPurchaseForm({
       id: makeId(),
       date: purchase.date,
       merchant: purchase.merchant.trim(),
-      category: purchase.type === 'income' ? 'Income' : purchase.category,
+      category: resolveTypedCategory(
+        purchase.type,
+        purchase.category,
+        expenseCategoryOptions,
+        fallbackCategory,
+      ),
       amount,
       type: purchase.type,
       account: purchase.account,
@@ -127,12 +131,12 @@ export function AddPurchaseForm({
             setPurchase((current) => ({
               ...current,
               type: value as TransactionType,
-              category:
-                value === 'income'
-                  ? 'Income'
-                  : expenseCategoryOptions.some((item) => item.value === current.category)
-                    ? current.category
-                    : fallbackCategory,
+              category: resolveTypedCategory(
+                value as TransactionType,
+                current.category,
+                expenseCategoryOptions,
+                fallbackCategory,
+              ),
             }))
           }
           data={[
@@ -145,9 +149,8 @@ export function AddPurchaseForm({
           value={parseISODate(purchase.date)}
           valueFormat="YYYY-MM-DD"
           onChange={(value) => {
-            if (!value) return;
-            const date = typeof value === 'string' ? new Date(value) : value;
-            if (date instanceof Date && !Number.isNaN(date.getTime())) {
+            const date = inputValueToDate(value);
+            if (date) {
               setPurchase((current) => ({ ...current, date: dateToISO(date) }));
             }
           }}

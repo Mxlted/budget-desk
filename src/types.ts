@@ -53,6 +53,16 @@ export interface BudgetState {
   plannedMonthlyIncome: number;
 }
 
+export type BudgetProfileTemplate = 'empty' | 'sample' | 'current';
+
+export interface BudgetProfile {
+  id: string;
+  name: string;
+  state: BudgetState;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StatementRow {
   date: string;
   merchant: string;

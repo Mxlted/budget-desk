@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AppShell,
   Box,
@@ -39,6 +39,7 @@ import { DataTab } from './components/tabs/DataTab';
 import { BudgetLimitsPanel } from './components/BudgetLimitsPanel';
 import type {
   BudgetCategory,
+  BudgetProfileTemplate,
   BudgetState,
   RecurringPurchase,
   StatementRow,
@@ -56,7 +57,12 @@ const theme = createTheme({
   },
 });
 
-type ConfirmAction = 'clear' | 'reset' | 'reset-category-limits-zero' | 'restore-category-limits';
+type ConfirmAction =
+  | 'clear'
+  | 'reset'
+  | 'reset-category-limits-zero'
+  | 'restore-category-limits'
+  | 'delete-profile';
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5 MB
 const CUSTOM_CATEGORY_COLORS = [
@@ -82,8 +88,27 @@ const showNeutral = (title: string, message: string) =>
 
 const normalizeCategoryName = (value: string) => value.trim().replace(/\s+/g, ' ');
 
+const normalizeProfileName = (value: string) => value.trim().replace(/\s+/g, ' ');
+
+const profileFileSlug = (value: string) =>
+  normalizeProfileName(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'budget';
+
 function AppContent() {
-  const { state, setState, clearState } = useBudgetState();
+  const {
+    state,
+    profiles,
+    activeProfile,
+    activeProfileId,
+    setState,
+    clearState,
+    createProfile,
+    renameProfile,
+    deleteProfile,
+    switchProfile,
+  } = useBudgetState();
   const { selectedMonth, setActiveMonth } = useMonthNavigation();
   const { activeTab, setActiveTab } = useTabNavigation('dashboard');
 
@@ -103,6 +128,10 @@ function AppContent() {
   const categoryOptions = useMemo(
     () => state.budgets.map((item) => ({ value: item.category, label: item.category })),
     [state.budgets],
+  );
+  const profileOptions = useMemo(
+    () => profiles.map((profile) => ({ value: profile.id, label: profile.name })),
+    [profiles],
   );
   const accountOptions = useMemo(
     () => state.accounts.map((account) => ({ value: account, label: account })),
@@ -129,6 +158,15 @@ function AppContent() {
       }),
     [monthSummary.rows, query, categoryFilter],
   );
+
+  useEffect(() => {
+    setImportPreview([]);
+    setQuery('');
+    setCategoryFilter(null);
+    setImportAccount(state.accounts[0] ?? 'Checking');
+    // Only reset transient controls when the user switches profiles.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeProfileId]);
 
   // ─── Action handlers ─────────────────────────────────────────────────────
   const handleAddTransaction = useCallback(
@@ -278,6 +316,74 @@ function AppContent() {
     [categoryFilter, setState, state.budgets],
   );
 
+  const handleSelectProfile = useCallback(
+    (profileId: string) => {
+      switchProfile(profileId);
+    },
+    [switchProfile],
+  );
+
+  const handleCreateProfile = useCallback(
+    (name: string, template: BudgetProfileTemplate) => {
+      const profileName = normalizeProfileName(name);
+
+      if (!profileName) {
+        showError('Profile needs a name', 'Name the budget profile before creating it.');
+        return false;
+      }
+
+      if (
+        profiles.some((profile) => profile.name.toLowerCase() === profileName.toLowerCase())
+      ) {
+        showError('Profile already exists', `${profileName} is already in your profile list.`);
+        return false;
+      }
+
+      createProfile(profileName, template);
+      showInfo('Profile created', `${profileName} is now the active budget profile.`);
+      return true;
+    },
+    [createProfile, profiles],
+  );
+
+  const handleRenameActiveProfile = useCallback(
+    (name: string) => {
+      const profileName = normalizeProfileName(name);
+
+      if (!profileName) {
+        showError('Profile needs a name', 'Enter a name before saving this profile.');
+        return false;
+      }
+
+      if (
+        profiles.some(
+          (profile) =>
+            profile.id !== activeProfileId &&
+            profile.name.toLowerCase() === profileName.toLowerCase(),
+        )
+      ) {
+        showError('Profile already exists', `${profileName} is already in your profile list.`);
+        return false;
+      }
+
+      renameProfile(activeProfileId, profileName);
+      showInfo('Profile renamed', `This budget profile is now ${profileName}.`);
+      return true;
+    },
+    [activeProfileId, profiles, renameProfile],
+  );
+
+  const handleDeleteActiveProfile = useCallback(() => {
+    if (profiles.length <= 1) {
+      showError('Keep one profile', 'Create another budget profile before deleting this one.');
+      return;
+    }
+
+    const deletedName = activeProfile.name;
+    deleteProfile(activeProfileId);
+    showNeutral('Profile deleted', `${deletedName} was removed from this browser.`);
+  }, [activeProfile.name, activeProfileId, deleteProfile, profiles.length]);
+
   const handleToggleRecurring = useCallback(
     (id: string) => {
       setState((current) => ({
@@ -338,13 +444,13 @@ function AppContent() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `budget-desk-${selectedMonth}.json`;
+    link.download = `budget-desk-${profileFileSlug(activeProfile.name)}-${selectedMonth}.json`;
     // Append before click — Firefox refuses to download from a detached anchor.
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-  }, [state, selectedMonth]);
+  }, [activeProfile.name, state, selectedMonth]);
 
   const handleImportData = useCallback(
     async (file: File | null) => {
@@ -372,7 +478,7 @@ function AppContent() {
 
         const sanitized = sanitizeBudgetState(parsed);
         setState(sanitized);
-        showInfo('Budget restored', 'Your local budget data was replaced with the imported file.');
+        showInfo('Budget restored', 'The active profile was replaced with the imported file.');
       } catch {
         showError('Import failed', 'That JSON file does not look like a Budget Desk export.');
       }
@@ -381,10 +487,9 @@ function AppContent() {
   );
 
   const handleResetSampleData = useCallback(() => {
-    // clearState() resets to defaultValue (createInitialBudgetState).
-    // No need to also call setState — see useLocalStorage docs.
+    // In profile mode, clearState resets only the active budget profile.
     clearState();
-    showInfo('Sample data restored', 'The local budget workspace has been reset.');
+    showInfo('Sample data restored', 'The active budget profile has been reset.');
   }, [clearState]);
 
   const handleClearBudgetData = useCallback(() => {
@@ -394,7 +499,7 @@ function AppContent() {
     setCategoryFilter(null);
     showNeutral(
       'Saved budget data cleared',
-      'Transactions, monthly purchases, imported rows, and goals were removed.',
+      'Transactions, monthly purchases, imported rows, and goals were removed from this profile.',
     );
   }, [setState]);
 
@@ -467,7 +572,7 @@ function AppContent() {
       case 'clear':
         return {
           title: 'Clear saved budget data?',
-          body: 'This removes transactions, monthly items, imported rows, and savings goals from local storage.',
+          body: 'This removes transactions, monthly items, imported rows, and savings goals from the active profile.',
           confirmLabel: 'Clear data',
           color: 'red',
           onConfirm: handleClearBudgetData,
@@ -488,10 +593,18 @@ function AppContent() {
           color: 'gray',
           onConfirm: handleRestoreCategoryLimits,
         };
+      case 'delete-profile':
+        return {
+          title: `Delete ${activeProfile.name}?`,
+          body: 'This removes this local budget profile from this browser. Other profiles stay available.',
+          confirmLabel: 'Delete profile',
+          color: 'red',
+          onConfirm: handleDeleteActiveProfile,
+        };
       case 'reset':
         return {
           title: 'Reset sample data?',
-          body: 'This replaces your current local workspace with the starter sample budget.',
+          body: 'This replaces the active profile with the starter sample budget.',
           confirmLabel: 'Reset data',
           color: 'gray',
           onConfirm: handleResetSampleData,
@@ -500,8 +613,10 @@ function AppContent() {
         return null;
     }
   }, [
+    activeProfile.name,
     confirmAction,
     handleClearBudgetData,
+    handleDeleteActiveProfile,
     handleResetCategoryLimitsToZero,
     handleRestoreCategoryLimits,
     handleResetSampleData,
@@ -525,6 +640,9 @@ function AppContent() {
         <AppShell.Header className="app-header">
           <AppHeader
             selectedMonth={selectedMonth}
+            profileOptions={profileOptions}
+            activeProfileId={activeProfileId}
+            onSelectProfile={handleSelectProfile}
             onSelectMonth={setActiveMonth}
             onExport={handleExport}
           />
@@ -658,6 +776,12 @@ function AppContent() {
 
               <Tabs.Panel value="data" pt="lg">
                 <DataTab
+                  profiles={profiles}
+                  activeProfileId={activeProfileId}
+                  onSelectProfile={handleSelectProfile}
+                  onCreateProfile={handleCreateProfile}
+                  onRenameProfile={handleRenameActiveProfile}
+                  onDeleteProfile={() => setConfirmAction('delete-profile')}
                   importPreview={importPreview}
                   statementType={statementType}
                   onStatementTypeChange={setStatementType}

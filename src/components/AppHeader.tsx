@@ -1,28 +1,27 @@
-import { ActionIcon, Box, Button, Group, ThemeIcon, Title, Text, Tooltip } from '@mantine/core';
+import { ActionIcon, Box, Button, Group, Select, ThemeIcon, Title, Text, Tooltip } from '@mantine/core';
 import { MonthPickerInput } from '@mantine/dates';
 import { ChevronLeft, ChevronRight, Download, WalletCards } from 'lucide-react';
-import { addMonths, currentMonthKey, normalizeMonthKey } from '../budgetMath';
+import { addMonths, currentMonthKey } from '../budgetMath';
+import { dateToMonthKey, inputValueToDate, monthKeyToDate } from '../formHelpers';
 import { ColorSchemeToggle } from './ColorSchemeToggle';
-
-const monthKeyToDate = (month: string): Date => {
-  const [year, m] = normalizeMonthKey(month).split('-').map(Number);
-  // Anchor to noon to avoid TZ rounding into adjacent month.
-  return new Date(year, m - 1, 1, 12, 0, 0);
-};
-
-const dateToMonthKey = (date: Date): string => {
-  const year = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  return `${year}-${m}`;
-};
 
 interface AppHeaderProps {
   selectedMonth: string;
+  profileOptions: Array<{ value: string; label: string }>;
+  activeProfileId: string;
+  onSelectProfile: (profileId: string) => void;
   onSelectMonth: (month: string) => void;
   onExport: () => void;
 }
 
-export function AppHeader({ selectedMonth, onSelectMonth, onExport }: AppHeaderProps) {
+export function AppHeader({
+  selectedMonth,
+  profileOptions,
+  activeProfileId,
+  onSelectProfile,
+  onSelectMonth,
+  onExport,
+}: AppHeaderProps) {
   return (
     <Group justify="space-between" wrap="nowrap" h="100%">
       <Group gap="sm" wrap="nowrap">
@@ -40,6 +39,18 @@ export function AppHeader({ selectedMonth, onSelectMonth, onExport }: AppHeaderP
       </Group>
 
       <Group gap="xs" wrap="nowrap" className="header-actions">
+        <Select
+          aria-label="Budget profile"
+          data={profileOptions}
+          value={activeProfileId}
+          allowDeselect={false}
+          onChange={(value) => {
+            if (value) {
+              onSelectProfile(value);
+            }
+          }}
+          w={175}
+        />
         <Tooltip label="Previous month">
           <ActionIcon
             variant="default"
@@ -54,9 +65,8 @@ export function AppHeader({ selectedMonth, onSelectMonth, onExport }: AppHeaderP
           aria-label="Selected month"
           value={monthKeyToDate(selectedMonth)}
           onChange={(value) => {
-            if (!value) return;
-            const date = typeof value === 'string' ? new Date(value) : value;
-            if (date instanceof Date && !Number.isNaN(date.getTime())) {
+            const date = inputValueToDate(value);
+            if (date) {
               onSelectMonth(dateToMonthKey(date));
             }
           }}
