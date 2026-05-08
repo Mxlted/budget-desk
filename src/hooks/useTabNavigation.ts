@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-const VALID_TABS = ['dashboard', 'transactions', 'recurring', 'data'] as const;
+const VALID_TABS = ['dashboard', 'transactions', 'recurring', 'categories', 'data'] as const;
 export type TabKey = (typeof VALID_TABS)[number];
 
 const isTabKey = (value: string | null | undefined): value is TabKey =>

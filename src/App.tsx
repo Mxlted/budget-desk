@@ -13,7 +13,7 @@ import {
   createTheme,
 } from '@mantine/core';
 import { Notifications, notifications } from '@mantine/notifications';
-import { CalendarClock, Database, Plus, ReceiptText } from 'lucide-react';
+import { CalendarClock, Database, Plus, ReceiptText, Tags } from 'lucide-react';
 import {
   budgetBars,
   categoryBreakdown,
@@ -36,6 +36,7 @@ import { DashboardTab } from './components/tabs/DashboardTab';
 import { PurchasesTab } from './components/tabs/PurchasesTab';
 import { MonthlyTab } from './components/tabs/MonthlyTab';
 import { DataTab } from './components/tabs/DataTab';
+import { BudgetLimitsPanel } from './components/BudgetLimitsPanel';
 import type {
   BudgetCategory,
   BudgetState,
@@ -586,6 +587,9 @@ function AppContent() {
                 <Tabs.Tab value="recurring" leftSection={<CalendarClock size={16} />}>
                   Monthly
                 </Tabs.Tab>
+                <Tabs.Tab value="categories" leftSection={<Tags size={16} />}>
+                  Categories
+                </Tabs.Tab>
                 <Tabs.Tab value="data" leftSection={<Database size={16} />}>
                   Import & data
                 </Tabs.Tab>
@@ -635,15 +639,20 @@ function AppContent() {
                   onToggleRecurring={handleToggleRecurring}
                   onRemoveRecurring={handleRemoveRecurring}
                   onFormError={showError}
-                  categoryLimitBudgets={categoryLimitBudgets}
-                  categoryLimitsEnabled={categoryLimitsEnabled}
-                  hasCategoryLimitValues={hasCategoryLimitValues}
-                  onToggleLimits={handleToggleCategoryLimits}
-                  onUpdateBudget={handleUpdateBudget}
+                />
+              </Tabs.Panel>
+
+              <Tabs.Panel value="categories" pt="lg">
+                <BudgetLimitsPanel
+                  budgets={categoryLimitBudgets}
+                  enabled={categoryLimitsEnabled}
+                  hasValues={hasCategoryLimitValues}
+                  onToggle={handleToggleCategoryLimits}
+                  onUpdate={handleUpdateBudget}
                   onAddCategory={handleAddCategory}
                   onRemoveCategory={handleRemoveCategory}
-                  onResetLimitsToZero={() => setConfirmAction('reset-category-limits-zero')}
-                  onRestoreLimits={() => setConfirmAction('restore-category-limits')}
+                  onResetToZero={() => setConfirmAction('reset-category-limits-zero')}
+                  onRestoreDefaults={() => setConfirmAction('restore-category-limits')}
                 />
               </Tabs.Panel>
 

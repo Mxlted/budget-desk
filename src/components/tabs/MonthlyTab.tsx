@@ -16,8 +16,7 @@ import { Pause, Pencil, Play, Trash2 } from 'lucide-react';
 import { preciseCurrency } from '../../budgetMath';
 import { AddRecurringForm } from '../forms/AddRecurringForm';
 import { EditRecurringForm } from '../forms/EditRecurringForm';
-import { BudgetLimitsPanel } from '../BudgetLimitsPanel';
-import type { BudgetCategory, RecurringPurchase } from '../../types';
+import type { RecurringPurchase } from '../../types';
 
 interface MonthlyTabProps {
   selectedMonth: string;
@@ -29,16 +28,6 @@ interface MonthlyTabProps {
   onToggleRecurring: (id: string) => void;
   onRemoveRecurring: (id: string) => void;
   onFormError: (title: string, message: string) => void;
-  // Budget limits
-  categoryLimitBudgets: BudgetCategory[];
-  categoryLimitsEnabled: boolean;
-  hasCategoryLimitValues: boolean;
-  onToggleLimits: (enabled: boolean) => void;
-  onUpdateBudget: (category: string, monthlyLimit: number) => void;
-  onAddCategory: (category: string, monthlyLimit: number) => boolean;
-  onRemoveCategory: (category: string) => void;
-  onResetLimitsToZero: () => void;
-  onRestoreLimits: () => void;
 }
 
 export function MonthlyTab({
@@ -51,15 +40,6 @@ export function MonthlyTab({
   onToggleRecurring,
   onRemoveRecurring,
   onFormError,
-  categoryLimitBudgets,
-  categoryLimitsEnabled,
-  hasCategoryLimitValues,
-  onToggleLimits,
-  onUpdateBudget,
-  onAddCategory,
-  onRemoveCategory,
-  onResetLimitsToZero,
-  onRestoreLimits,
 }: MonthlyTabProps) {
   const activeCount = recurring.filter((item) => item.active).length;
   const [editingRecurring, setEditingRecurring] = useState<RecurringPurchase | null>(null);
@@ -182,17 +162,6 @@ export function MonthlyTab({
         </ScrollArea>
       </Paper>
 
-      <BudgetLimitsPanel
-        budgets={categoryLimitBudgets}
-        enabled={categoryLimitsEnabled}
-        hasValues={hasCategoryLimitValues}
-        onToggle={onToggleLimits}
-        onUpdate={onUpdateBudget}
-        onAddCategory={onAddCategory}
-        onRemoveCategory={onRemoveCategory}
-        onResetToZero={onResetLimitsToZero}
-        onRestoreDefaults={onRestoreLimits}
-      />
     </SimpleGrid>
   );
 }
