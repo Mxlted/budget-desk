@@ -12,20 +12,22 @@ import {
   Title,
 } from '@mantine/core';
 import { MonthPickerInput } from '@mantine/dates';
-import { CalendarClock, Check } from 'lucide-react';
+import { Check, Pencil, X } from 'lucide-react';
 import {
   normalizeCurrencyAmount,
   parseFiniteNumber,
   type NumericInputValue,
 } from '../../amounts';
-import { currentMonthKey, makeId, normalizeMonthKey } from '../../budgetMath';
+import { normalizeMonthKey } from '../../budgetMath';
 import type { RecurringPurchase, TransactionType } from '../../types';
 
-interface AddRecurringFormProps {
+interface EditRecurringFormProps {
+  item: RecurringPurchase;
   selectedMonth: string;
   categoryOptions: Array<{ value: string; label: string }>;
   accountOptions: Array<{ value: string; label: string }>;
-  onAdd: (recurring: RecurringPurchase) => void;
+  onSave: (item: RecurringPurchase) => void;
+  onCancel: () => void;
   onError: (title: string, message: string) => void;
 }
 
@@ -41,18 +43,6 @@ interface RecurringDraft {
   notes: string;
 }
 
-const emptyRecurring = (month = currentMonthKey(), category = 'Utilities'): RecurringDraft => ({
-  merchant: '',
-  category,
-  amount: 0,
-  type: 'expense' as TransactionType,
-  day: 1,
-  account: 'Checking',
-  startMonth: month,
-  endMonth: '',
-  notes: '',
-});
-
 const monthKeyToDate = (month: string): Date | null => {
   if (!month) return null;
   const [year, m] = normalizeMonthKey(month).split('-').map(Number);
@@ -65,25 +55,41 @@ const dateToMonthKey = (date: Date): string => {
   return `${y}-${m}`;
 };
 
-export function AddRecurringForm({
+const draftFromRecurring = (item: RecurringPurchase): RecurringDraft => ({
+  merchant: item.merchant,
+  category: item.category,
+  amount: item.amount,
+  type: item.type,
+  day: item.day,
+  account: item.account,
+  startMonth: item.startMonth,
+  endMonth: item.endMonth ?? '',
+  notes: item.notes ?? '',
+});
+
+export function EditRecurringForm({
+  item,
   selectedMonth,
   categoryOptions,
   accountOptions,
-  onAdd,
+  onSave,
+  onCancel,
   onError,
-}: AddRecurringFormProps) {
+}: EditRecurringFormProps) {
   const expenseCategoryOptions = useMemo(
-    () => categoryOptions.filter((item) => item.value !== 'Income'),
+    () => categoryOptions.filter((option) => option.value !== 'Income'),
     [categoryOptions],
   );
   const fallbackCategory = expenseCategoryOptions[0]?.value ?? 'Other';
-  const [recurring, setRecurring] = useState(() =>
-    emptyRecurring(selectedMonth, fallbackCategory),
-  );
+  const [recurring, setRecurring] = useState(() => draftFromRecurring(item));
+
+  useEffect(() => {
+    setRecurring(draftFromRecurring(item));
+  }, [item]);
 
   useEffect(() => {
     setRecurring((current) => {
-      const categoryExists = expenseCategoryOptions.some((item) => item.value === current.category);
+      const categoryExists = expenseCategoryOptions.some((option) => option.value === current.category);
       if (current.type === 'income' || categoryExists) {
         return current;
       }
@@ -103,33 +109,29 @@ export function AddRecurringForm({
       return;
     }
 
-    const item: RecurringPurchase = {
-      id: makeId(),
+    onSave({
+      ...item,
       merchant: recurring.merchant.trim(),
       category: recurring.type === 'income' ? 'Income' : recurring.category,
       amount,
       type: recurring.type,
       day: recurring.day,
       account: recurring.account,
-      active: true,
       startMonth: normalizeMonthKey(recurring.startMonth, selectedMonth),
       endMonth: recurring.endMonth
         ? normalizeMonthKey(recurring.endMonth, recurring.startMonth)
         : undefined,
       notes: recurring.notes.trim() || undefined,
-    };
-
-    onAdd(item);
-    setRecurring(emptyRecurring(selectedMonth, fallbackCategory));
+    });
   };
 
   return (
     <Paper className="panel form-panel" withBorder>
       <Group mb="md" gap="sm">
-        <ThemeIcon color="orange" variant="light">
-          <CalendarClock size={18} />
+        <ThemeIcon color="blue" variant="light">
+          <Pencil size={18} />
         </ThemeIcon>
-        <Title order={3}>Monthly item</Title>
+        <Title order={3}>Edit monthly</Title>
       </Group>
 
       <Stack gap="sm">
@@ -142,7 +144,7 @@ export function AddRecurringForm({
               category:
                 value === 'income'
                   ? 'Income'
-                  : expenseCategoryOptions.some((item) => item.value === current.category)
+                  : expenseCategoryOptions.some((option) => option.value === current.category)
                     ? current.category
                     : fallbackCategory,
             }))
@@ -154,11 +156,6 @@ export function AddRecurringForm({
         />
         <TextInput
           label="Name"
-          placeholder={
-            recurring.type === 'income'
-              ? 'Payroll, side income, stipend...'
-              : 'Rent, internet, subscription...'
-          }
           value={recurring.merchant}
           onChange={(event) => {
             const value = event.currentTarget.value;
@@ -254,13 +251,18 @@ export function AddRecurringForm({
             setRecurring((current) => ({ ...current, notes: value }));
           }}
         />
-        <Button
-          color={recurring.type === 'income' ? 'blue' : 'orange'}
-          leftSection={<Check size={16} />}
-          onClick={handleSubmit}
-        >
-          Save monthly {recurring.type}
-        </Button>
+        <Group grow>
+          <Button
+            color={recurring.type === 'income' ? 'blue' : 'orange'}
+            leftSection={<Check size={16} />}
+            onClick={handleSubmit}
+          >
+            Save changes
+          </Button>
+          <Button variant="default" leftSection={<X size={16} />} onClick={onCancel}>
+            Cancel
+          </Button>
+        </Group>
       </Stack>
     </Paper>
   );

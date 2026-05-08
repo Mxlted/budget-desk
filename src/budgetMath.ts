@@ -187,7 +187,9 @@ export const detectCategory = (merchant: string, budgets: BudgetCategory[] = cat
   const match = budgets.find((budget) =>
     budget.keywords.some((keyword) => normalized.includes(keyword)),
   );
-  return match?.category ?? 'Other';
+  const fallbackCategory =
+    budgets.find((budget) => budget.category !== 'Income')?.category ?? 'Other';
+  return match?.category ?? fallbackCategory;
 };
 
 const stripCurrency = (value: string) => {

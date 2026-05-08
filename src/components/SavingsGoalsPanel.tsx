@@ -10,6 +10,7 @@ import {
   Title,
 } from '@mantine/core';
 import { Target } from 'lucide-react';
+import { normalizeCurrencyAmount } from '../amounts';
 import { currency } from '../budgetMath';
 import type { SavingsGoal } from '../types';
 
@@ -49,10 +50,12 @@ export function SavingsGoalsPanel({ goals, onUpdateSaved }: SavingsGoalsPanelPro
                   label={`Saved so far — ${goal.name}`}
                   min={0}
                   prefix="$"
+                  allowNegative={false}
+                  decimalScale={2}
+                  fixedDecimalScale
+                  step={0.01}
                   value={goal.saved}
-                  onChange={(value) =>
-                    onUpdateSaved(goal.id, typeof value === 'number' ? value : 0)
-                  }
+                  onChange={(value) => onUpdateSaved(goal.id, normalizeCurrencyAmount(value))}
                 />
               </Box>
             );

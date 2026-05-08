@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   ActionIcon,
   Badge,
@@ -13,9 +14,10 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core';
-import { Filter, Search, Trash2 } from 'lucide-react';
+import { Filter, Pencil, Search, Trash2 } from 'lucide-react';
 import { preciseCurrency } from '../../budgetMath';
 import { AddPurchaseForm } from '../forms/AddPurchaseForm';
+import { EditPurchaseForm } from '../forms/EditPurchaseForm';
 import type { Transaction } from '../../types';
 
 interface PurchasesTabProps {
@@ -28,6 +30,7 @@ interface PurchasesTabProps {
   categoryOptions: Array<{ value: string; label: string }>;
   accountOptions: Array<{ value: string; label: string }>;
   onAddTransaction: (transaction: Transaction) => void;
+  onUpdateTransaction: (transaction: Transaction) => void;
   onRemoveTransaction: (id: string) => void;
   onFormError: (title: string, message: string) => void;
 }
@@ -42,9 +45,12 @@ export function PurchasesTab({
   categoryOptions,
   accountOptions,
   onAddTransaction,
+  onUpdateTransaction,
   onRemoveTransaction,
   onFormError,
 }: PurchasesTabProps) {
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
   return (
     <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="md">
       <AddPurchaseForm
@@ -54,6 +60,20 @@ export function PurchasesTab({
         onAdd={onAddTransaction}
         onError={onFormError}
       />
+
+      {editingTransaction ? (
+        <EditPurchaseForm
+          transaction={editingTransaction}
+          categoryOptions={categoryOptions}
+          accountOptions={accountOptions}
+          onSave={(transaction) => {
+            onUpdateTransaction(transaction);
+            setEditingTransaction(null);
+          }}
+          onCancel={() => setEditingTransaction(null)}
+          onError={onFormError}
+        />
+      ) : null}
 
       <Paper className="panel table-panel" withBorder>
         <Group justify="space-between" align="flex-start" mb="md">
@@ -121,16 +141,32 @@ export function PurchasesTab({
                   </Table.Td>
                   <Table.Td>
                     {item.source !== 'recurring' ? (
-                      <Tooltip label={`Delete ${item.merchant}`}>
-                        <ActionIcon
-                          variant="subtle"
-                          color="red"
-                          aria-label={`Delete ${item.merchant}`}
-                          onClick={() => onRemoveTransaction(item.id)}
-                        >
-                          <Trash2 size={16} />
-                        </ActionIcon>
-                      </Tooltip>
+                      <Group gap={4} wrap="nowrap">
+                        <Tooltip label={`Edit ${item.merchant}`}>
+                          <ActionIcon
+                            variant="subtle"
+                            aria-label={`Edit ${item.merchant}`}
+                            onClick={() => setEditingTransaction(item)}
+                          >
+                            <Pencil size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label={`Delete ${item.merchant}`}>
+                          <ActionIcon
+                            variant="subtle"
+                            color="red"
+                            aria-label={`Delete ${item.merchant}`}
+                            onClick={() => {
+                              onRemoveTransaction(item.id);
+                              if (editingTransaction?.id === item.id) {
+                                setEditingTransaction(null);
+                              }
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </ActionIcon>
+                        </Tooltip>
+                      </Group>
                     ) : null}
                   </Table.Td>
                 </Table.Tr>

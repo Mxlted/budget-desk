@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   ActionIcon,
   Badge,
@@ -11,9 +12,10 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core';
-import { Pause, Play, Trash2 } from 'lucide-react';
+import { Pause, Pencil, Play, Trash2 } from 'lucide-react';
 import { preciseCurrency } from '../../budgetMath';
 import { AddRecurringForm } from '../forms/AddRecurringForm';
+import { EditRecurringForm } from '../forms/EditRecurringForm';
 import { BudgetLimitsPanel } from '../BudgetLimitsPanel';
 import type { BudgetCategory, RecurringPurchase } from '../../types';
 
@@ -23,6 +25,7 @@ interface MonthlyTabProps {
   categoryOptions: Array<{ value: string; label: string }>;
   accountOptions: Array<{ value: string; label: string }>;
   onAddRecurring: (item: RecurringPurchase) => void;
+  onUpdateRecurring: (item: RecurringPurchase) => void;
   onToggleRecurring: (id: string) => void;
   onRemoveRecurring: (id: string) => void;
   onFormError: (title: string, message: string) => void;
@@ -32,6 +35,8 @@ interface MonthlyTabProps {
   hasCategoryLimitValues: boolean;
   onToggleLimits: (enabled: boolean) => void;
   onUpdateBudget: (category: string, monthlyLimit: number) => void;
+  onAddCategory: (category: string, monthlyLimit: number) => boolean;
+  onRemoveCategory: (category: string) => void;
   onResetLimitsToZero: () => void;
   onRestoreLimits: () => void;
 }
@@ -42,6 +47,7 @@ export function MonthlyTab({
   categoryOptions,
   accountOptions,
   onAddRecurring,
+  onUpdateRecurring,
   onToggleRecurring,
   onRemoveRecurring,
   onFormError,
@@ -50,10 +56,13 @@ export function MonthlyTab({
   hasCategoryLimitValues,
   onToggleLimits,
   onUpdateBudget,
+  onAddCategory,
+  onRemoveCategory,
   onResetLimitsToZero,
   onRestoreLimits,
 }: MonthlyTabProps) {
   const activeCount = recurring.filter((item) => item.active).length;
+  const [editingRecurring, setEditingRecurring] = useState<RecurringPurchase | null>(null);
 
   return (
     <SimpleGrid cols={{ base: 1, lg: 3 }} spacing="md">
@@ -64,6 +73,21 @@ export function MonthlyTab({
         onAdd={onAddRecurring}
         onError={onFormError}
       />
+
+      {editingRecurring ? (
+        <EditRecurringForm
+          item={editingRecurring}
+          selectedMonth={selectedMonth}
+          categoryOptions={categoryOptions}
+          accountOptions={accountOptions}
+          onSave={(item) => {
+            onUpdateRecurring(item);
+            setEditingRecurring(null);
+          }}
+          onCancel={() => setEditingRecurring(null)}
+          onError={onFormError}
+        />
+      ) : null}
 
       <Paper className="panel table-panel" withBorder>
         <Group justify="space-between" align="flex-start" mb="md">
@@ -114,6 +138,15 @@ export function MonthlyTab({
                   <Table.Td>{preciseCurrency.format(item.amount)}</Table.Td>
                   <Table.Td>
                     <Group gap={4} wrap="nowrap">
+                      <Tooltip label={`Edit ${item.merchant}`}>
+                        <ActionIcon
+                          variant="subtle"
+                          aria-label={`Edit ${item.merchant}`}
+                          onClick={() => setEditingRecurring(item)}
+                        >
+                          <Pencil size={16} />
+                        </ActionIcon>
+                      </Tooltip>
                       <Tooltip
                         label={item.active ? `Pause ${item.merchant}` : `Activate ${item.merchant}`}
                       >
@@ -130,7 +163,12 @@ export function MonthlyTab({
                           variant="subtle"
                           color="red"
                           aria-label={`Delete ${item.merchant}`}
-                          onClick={() => onRemoveRecurring(item.id)}
+                          onClick={() => {
+                            onRemoveRecurring(item.id);
+                            if (editingRecurring?.id === item.id) {
+                              setEditingRecurring(null);
+                            }
+                          }}
                         >
                           <Trash2 size={16} />
                         </ActionIcon>
@@ -150,6 +188,8 @@ export function MonthlyTab({
         hasValues={hasCategoryLimitValues}
         onToggle={onToggleLimits}
         onUpdate={onUpdateBudget}
+        onAddCategory={onAddCategory}
+        onRemoveCategory={onRemoveCategory}
         onResetToZero={onResetLimitsToZero}
         onRestoreDefaults={onRestoreLimits}
       />

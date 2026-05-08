@@ -17,11 +17,11 @@ import { CalendarClock, Database, Plus, ReceiptText } from 'lucide-react';
 import {
   budgetBars,
   categoryBreakdown,
-  currency,
   currentMonthKey,
   formatMonth,
   makeId,
   parseStatement,
+  preciseCurrency,
   summarizeMonth,
   trendData,
 } from './budgetMath';
@@ -36,7 +36,13 @@ import { DashboardTab } from './components/tabs/DashboardTab';
 import { PurchasesTab } from './components/tabs/PurchasesTab';
 import { MonthlyTab } from './components/tabs/MonthlyTab';
 import { DataTab } from './components/tabs/DataTab';
-import type { BudgetState, RecurringPurchase, StatementRow, Transaction } from './types';
+import type {
+  BudgetCategory,
+  BudgetState,
+  RecurringPurchase,
+  StatementRow,
+  Transaction,
+} from './types';
 
 const theme = createTheme({
   primaryColor: 'gray',
@@ -52,6 +58,17 @@ const theme = createTheme({
 type ConfirmAction = 'clear' | 'reset' | 'reset-category-limits-zero' | 'restore-category-limits';
 
 const MAX_IMPORT_BYTES = 5 * 1024 * 1024; // 5 MB
+const CUSTOM_CATEGORY_COLORS = [
+  'indigo.6',
+  'teal.6',
+  'orange.6',
+  'cyan.7',
+  'pink.6',
+  'grape.6',
+  'red.6',
+  'blue.7',
+  'gray.6',
+];
 
 const showError = (title: string, message: string) =>
   notifications.show({ color: 'red', title, message });
@@ -61,6 +78,8 @@ const showInfo = (title: string, message: string) =>
 
 const showNeutral = (title: string, message: string) =>
   notifications.show({ color: 'gray', title, message });
+
+const normalizeCategoryName = (value: string) => value.trim().replace(/\s+/g, ' ');
 
 function AppContent() {
   const { state, setState, clearState } = useBudgetState();
@@ -129,10 +148,36 @@ function AppContent() {
     [setState],
   );
 
+  const handleUpdateTransaction = useCallback(
+    (transaction: Transaction) => {
+      setState((current) => ({
+        ...current,
+        transactions: current.transactions.map((item) =>
+          item.id === transaction.id ? transaction : item,
+        ),
+      }));
+      showInfo('Entry updated', `${transaction.merchant} was saved.`);
+    },
+    [setState],
+  );
+
   const handleAddRecurring = useCallback(
     (item: RecurringPurchase) => {
       setState((current) => ({ ...current, recurring: [item, ...current.recurring] }));
       showInfo(`Monthly ${item.type} saved`, `${item.merchant} will appear in matching months.`);
+    },
+    [setState],
+  );
+
+  const handleUpdateRecurring = useCallback(
+    (item: RecurringPurchase) => {
+      setState((current) => ({
+        ...current,
+        recurring: current.recurring.map((currentItem) =>
+          currentItem.id === item.id ? item : currentItem,
+        ),
+      }));
+      showInfo(`Monthly ${item.type} updated`, `${item.merchant} was saved.`);
     },
     [setState],
   );
@@ -145,6 +190,91 @@ function AppContent() {
       }));
     },
     [setState],
+  );
+
+  const handleAddCategory = useCallback(
+    (categoryValue: string, monthlyLimit: number) => {
+      const category = normalizeCategoryName(categoryValue);
+
+      if (!category) {
+        showError('Category needs a name', 'Enter a category name before adding it.');
+        return false;
+      }
+
+      if (category.toLowerCase() === 'income') {
+        showError('Income is reserved', 'Income is already managed as its own category.');
+        return false;
+      }
+
+      if (
+        state.budgets.some(
+          (budget) => budget.category.toLowerCase() === category.toLowerCase(),
+        )
+      ) {
+        showError('Category already exists', `${category} is already in your category list.`);
+        return false;
+      }
+
+      const budget: BudgetCategory = {
+        category,
+        monthlyLimit: Math.max(0, monthlyLimit),
+        color: CUSTOM_CATEGORY_COLORS[state.budgets.length % CUSTOM_CATEGORY_COLORS.length],
+        keywords: [],
+      };
+
+      setState((current) => ({
+        ...current,
+        budgets: [...current.budgets, budget],
+      }));
+      showInfo('Category added', `${category} is now available for expenses.`);
+      return true;
+    },
+    [setState, state.budgets],
+  );
+
+  const handleRemoveCategory = useCallback(
+    (category: string) => {
+      if (category === 'Income') {
+        showError('Income is reserved', 'Income cannot be removed.');
+        return;
+      }
+
+      const remainingExpenseCategories = state.budgets.filter(
+        (budget) => budget.category !== category && budget.category !== 'Income',
+      );
+
+      if (remainingExpenseCategories.length === 0) {
+        showError(
+          'Keep one expense category',
+          'Add a custom category before removing the last expense category.',
+        );
+        return;
+      }
+
+      const fallbackCategory = remainingExpenseCategories[0].category;
+
+      setState((current) => ({
+        ...current,
+        budgets: current.budgets.filter((budget) => budget.category !== category),
+        transactions: current.transactions.map((transaction) =>
+          transaction.type === 'expense' && transaction.category === category
+            ? { ...transaction, category: fallbackCategory }
+            : transaction,
+        ),
+        recurring: current.recurring.map((item) =>
+          item.type === 'expense' && item.category === category
+            ? { ...item, category: fallbackCategory }
+            : item,
+        ),
+      }));
+
+      if (categoryFilter === category) {
+        setCategoryFilter(null);
+      }
+
+      showNeutral('Category removed', `${category} entries now use ${fallbackCategory}.`);
+    },
+    [categoryFilter, setState, state.budgets],
   );
 
   const handleToggleRecurring = useCallback(
@@ -404,19 +534,19 @@ function AppContent() {
             <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="md">
               <MetricTile
                 label="Monthly income"
-                value={currency.format(monthSummary.income || state.plannedMonthlyIncome)}
+                value={preciseCurrency.format(monthSummary.income || state.plannedMonthlyIncome)}
                 detail={monthSummary.income ? 'Actual' : 'Planned'}
                 tone="blue"
               />
               <MetricTile
                 label="Expenses"
-                value={currency.format(monthSummary.expenses)}
-                detail={`${currency.format(monthSummary.recurring)} recurring`}
+                value={preciseCurrency.format(monthSummary.expenses)}
+                detail={`${preciseCurrency.format(monthSummary.recurring)} recurring`}
                 tone="orange"
               />
               <MetricTile
                 label="Cash flow"
-                value={currency.format(monthSummary.remaining)}
+                value={preciseCurrency.format(monthSummary.remaining)}
                 detail={`${Math.round(monthSummary.savingsRate)}% left`}
                 tone={monthSummary.remaining >= 0 ? 'blue' : 'red'}
               />
@@ -488,6 +618,7 @@ function AppContent() {
                   categoryOptions={categoryOptions}
                   accountOptions={accountOptions}
                   onAddTransaction={handleAddTransaction}
+                  onUpdateTransaction={handleUpdateTransaction}
                   onRemoveTransaction={handleRemoveTransaction}
                   onFormError={showError}
                 />
@@ -500,6 +631,7 @@ function AppContent() {
                   categoryOptions={categoryOptions}
                   accountOptions={accountOptions}
                   onAddRecurring={handleAddRecurring}
+                  onUpdateRecurring={handleUpdateRecurring}
                   onToggleRecurring={handleToggleRecurring}
                   onRemoveRecurring={handleRemoveRecurring}
                   onFormError={showError}
@@ -508,6 +640,8 @@ function AppContent() {
                   hasCategoryLimitValues={hasCategoryLimitValues}
                   onToggleLimits={handleToggleCategoryLimits}
                   onUpdateBudget={handleUpdateBudget}
+                  onAddCategory={handleAddCategory}
+                  onRemoveCategory={handleRemoveCategory}
                   onResetLimitsToZero={() => setConfirmAction('reset-category-limits-zero')}
                   onRestoreLimits={() => setConfirmAction('restore-category-limits')}
                 />

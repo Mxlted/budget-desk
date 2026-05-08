@@ -5,6 +5,7 @@ import type {
   SavingsGoal,
   Transaction,
 } from './types';
+import { parseFiniteNumber } from './amounts';
 
 export const categoryCatalog: BudgetCategory[] = [
   {
@@ -285,8 +286,7 @@ export const createEmptyBudgetState = (): BudgetState => ({
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-const safeNumber = (value: unknown, fallback = 0) =>
-  typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+const safeNumber = (value: unknown, fallback = 0) => parseFiniteNumber(value, fallback);
 
 const safeString = (value: unknown, fallback = '') =>
   typeof value === 'string' ? value : fallback;
@@ -298,6 +298,83 @@ const safeMonth = (value: unknown, fallback = currentMonth) =>
 
 const safeDate = (value: unknown, fallback = currentMonth + '-01') =>
   typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
+
+const normalizeCategoryName = (value: unknown) => safeString(value).trim().replace(/\s+/g, ' ');
+
+const safeKeywords = (value: unknown, fallback: string[] = []) =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : fallback;
+
+const cloneDefaultBudget = (category: string) => {
+  const budget = categoryCatalog.find((item) => item.category === category) ?? categoryCatalog[0];
+
+  return {
+    ...budget,
+    keywords: [...budget.keywords],
+  };
+};
+
+const sanitizeBudgets = (savedBudgets: Record<string, unknown>[]): BudgetCategory[] => {
+  if (savedBudgets.length === 0) {
+    return categoryCatalog.map((budget) => ({ ...budget, keywords: [...budget.keywords] }));
+  }
+
+  const budgets = savedBudgets.reduce<BudgetCategory[]>((items, saved) => {
+    const rawCategory = normalizeCategoryName(saved.category);
+    const defaultBudget = categoryCatalog.find(
+      (item) => item.category.toLowerCase() === rawCategory.toLowerCase(),
+    );
+    const category = defaultBudget?.category ?? rawCategory;
+
+    if (
+      !category ||
+      items.some((item) => item.category.toLowerCase() === category.toLowerCase())
+    ) {
+      return items;
+    }
+
+    return [
+      ...items,
+      {
+        category,
+        monthlyLimit: Math.max(
+          0,
+          safeNumber(saved.monthlyLimit, defaultBudget?.monthlyLimit ?? 0),
+        ),
+        color: safeString(saved.color, defaultBudget?.color ?? 'gray.6'),
+        keywords: safeKeywords(saved.keywords, defaultBudget?.keywords ?? []),
+      },
+    ];
+  }, []);
+
+  if (!budgets.some((budget) => budget.category === 'Income')) {
+    budgets.push(cloneDefaultBudget('Income'));
+  }
+
+  if (!budgets.some((budget) => budget.category !== 'Income')) {
+    budgets.push(cloneDefaultBudget('Other'));
+  }
+
+  return budgets;
+};
+
+const fallbackExpenseCategory = (budgets: BudgetCategory[]) =>
+  budgets.find((budget) => budget.category !== 'Income')?.category ?? 'Other';
+
+const safeExpenseCategory = (
+  value: unknown,
+  budgets: BudgetCategory[],
+  fallback = fallbackExpenseCategory(budgets),
+) => {
+  const category = normalizeCategoryName(value);
+  const match = budgets.find(
+    (budget) =>
+      budget.category.toLowerCase() === category.toLowerCase() && budget.category !== 'Income',
+  );
+
+  return match?.category ?? fallback;
+};
 
 // Savings goal accents avoid green/lime because those palettes are reserved
 // elsewhere in the UI (e.g. positive cash flow, "all good" budget signals).
@@ -315,6 +392,10 @@ export const sanitizeBudgetState = (value: unknown): BudgetState => {
     return fallback;
   }
 
+  const savedBudgets = Array.isArray(value.budgets) ? value.budgets.filter(isRecord) : [];
+  const budgets = sanitizeBudgets(savedBudgets);
+  const defaultExpenseCategory = fallbackExpenseCategory(budgets);
+
   const transactions = Array.isArray(value.transactions)
     ? value.transactions.filter(isRecord).map((item, index): Transaction => {
         const type = safeType(item.type);
@@ -323,7 +404,10 @@ export const sanitizeBudgetState = (value: unknown): BudgetState => {
           id: safeString(item.id, `stored-transaction-${index}`),
           date: safeDate(item.date),
           merchant: safeString(item.merchant, 'Stored transaction'),
-          category: type === 'income' ? 'Income' : safeString(item.category, 'Other'),
+          category:
+            type === 'income'
+              ? 'Income'
+              : safeExpenseCategory(item.category, budgets, defaultExpenseCategory),
           amount: Math.max(0, safeNumber(item.amount)),
           type,
           account: safeString(item.account, accounts[0]),
@@ -339,7 +423,10 @@ export const sanitizeBudgetState = (value: unknown): BudgetState => {
         return {
           id: safeString(item.id, `stored-recurring-${index}`),
           merchant: safeString(item.merchant, 'Monthly item'),
-          category: type === 'income' ? 'Income' : safeString(item.category, 'Other'),
+          category:
+            type === 'income'
+              ? 'Income'
+              : safeExpenseCategory(item.category, budgets, defaultExpenseCategory),
           amount: Math.max(0, safeNumber(item.amount)),
           type,
           day: Math.min(31, Math.max(1, Math.round(safeNumber(item.day, 1)))),
@@ -351,15 +438,6 @@ export const sanitizeBudgetState = (value: unknown): BudgetState => {
         };
       })
     : [];
-  const savedBudgets = Array.isArray(value.budgets) ? value.budgets.filter(isRecord) : [];
-  const budgets = categoryCatalog.map((budget) => {
-    const saved = savedBudgets.find((item) => item.category === budget.category);
-
-    return {
-      ...budget,
-      monthlyLimit: Math.max(0, safeNumber(saved?.monthlyLimit, budget.monthlyLimit)),
-    };
-  });
   const savingsGoals = Array.isArray(value.savingsGoals)
     ? value.savingsGoals.filter(isRecord).map(
         (item, index): SavingsGoal => ({

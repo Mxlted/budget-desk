@@ -12,16 +12,16 @@ import {
   Title,
 } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
-import { Check, Plus } from 'lucide-react';
+import { Check, Pencil, X } from 'lucide-react';
 import { normalizeCurrencyAmount, type NumericInputValue } from '../../amounts';
-import { currentMonthKey, makeId } from '../../budgetMath';
 import type { Transaction, TransactionType } from '../../types';
 
-interface AddPurchaseFormProps {
-  selectedMonth: string;
+interface EditPurchaseFormProps {
+  transaction: Transaction;
   categoryOptions: Array<{ value: string; label: string }>;
   accountOptions: Array<{ value: string; label: string }>;
-  onAdd: (transaction: Transaction) => void;
+  onSave: (transaction: Transaction) => void;
+  onCancel: () => void;
   onError: (title: string, message: string) => void;
 }
 
@@ -34,16 +34,6 @@ interface PurchaseDraft {
   account: string;
   notes: string;
 }
-
-const emptyPurchase = (month = currentMonthKey(), category = 'Groceries'): PurchaseDraft => ({
-  date: `${month}-15`,
-  merchant: '',
-  category,
-  amount: 0,
-  type: 'expense' as TransactionType,
-  account: 'Credit Card',
-  notes: '',
-});
 
 const parseISODate = (iso: string): Date | null => {
   const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -59,19 +49,34 @@ const dateToISO = (date: Date): string => {
   return `${y}-${m}-${d}`;
 };
 
-export function AddPurchaseForm({
-  selectedMonth,
+const draftFromTransaction = (transaction: Transaction): PurchaseDraft => ({
+  date: transaction.date,
+  merchant: transaction.merchant,
+  category: transaction.category,
+  amount: transaction.amount,
+  type: transaction.type,
+  account: transaction.account,
+  notes: transaction.notes ?? '',
+});
+
+export function EditPurchaseForm({
+  transaction,
   categoryOptions,
   accountOptions,
-  onAdd,
+  onSave,
+  onCancel,
   onError,
-}: AddPurchaseFormProps) {
+}: EditPurchaseFormProps) {
   const expenseCategoryOptions = useMemo(
     () => categoryOptions.filter((item) => item.value !== 'Income'),
     [categoryOptions],
   );
   const fallbackCategory = expenseCategoryOptions[0]?.value ?? 'Other';
-  const [purchase, setPurchase] = useState(() => emptyPurchase(selectedMonth, fallbackCategory));
+  const [purchase, setPurchase] = useState(() => draftFromTransaction(transaction));
+
+  useEffect(() => {
+    setPurchase(draftFromTransaction(transaction));
+  }, [transaction]);
 
   useEffect(() => {
     setPurchase((current) => {
@@ -89,14 +94,14 @@ export function AddPurchaseForm({
 
     if (!purchase.date || !purchase.merchant.trim() || amount <= 0) {
       onError(
-        'Purchase needs a little more detail',
+        'Entry needs a little more detail',
         'Add a date, merchant, and amount before saving it.',
       );
       return;
     }
 
-    const transaction: Transaction = {
-      id: makeId(),
+    onSave({
+      ...transaction,
       date: purchase.date,
       merchant: purchase.merchant.trim(),
       category: purchase.type === 'income' ? 'Income' : purchase.category,
@@ -104,20 +109,16 @@ export function AddPurchaseForm({
       type: purchase.type,
       account: purchase.account,
       notes: purchase.notes.trim() || undefined,
-      source: 'manual',
-    };
-
-    onAdd(transaction);
-    setPurchase(emptyPurchase(selectedMonth, fallbackCategory));
+    });
   };
 
   return (
     <Paper className="panel form-panel" withBorder>
       <Group mb="md" gap="sm">
-        <ThemeIcon color="gray" variant="light">
-          <Plus size={18} />
+        <ThemeIcon color="blue" variant="light">
+          <Pencil size={18} />
         </ThemeIcon>
-        <Title order={3}>Add purchase</Title>
+        <Title order={3}>Edit entry</Title>
       </Group>
 
       <Stack gap="sm">
@@ -155,7 +156,6 @@ export function AddPurchaseForm({
         />
         <TextInput
           label="Merchant"
-          placeholder="Coffee shop, payroll, rent..."
           value={purchase.merchant}
           onChange={(event) => {
             const value = event.currentTarget.value;
@@ -208,9 +208,14 @@ export function AddPurchaseForm({
             setPurchase((current) => ({ ...current, notes: value }));
           }}
         />
-        <Button leftSection={<Check size={16} />} onClick={handleSubmit}>
-          Save purchase
-        </Button>
+        <Group grow>
+          <Button leftSection={<Check size={16} />} onClick={handleSubmit}>
+            Save changes
+          </Button>
+          <Button variant="default" leftSection={<X size={16} />} onClick={onCancel}>
+            Cancel
+          </Button>
+        </Group>
       </Stack>
     </Paper>
   );
