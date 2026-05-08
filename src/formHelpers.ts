@@ -1,5 +1,5 @@
 import { parseFiniteNumber } from './amounts';
-import { normalizeMonthKey } from './budgetMath';
+import { isISODate, isMonthKey, normalizeMonthKey } from './budgetMath';
 import type { TransactionType } from './types';
 
 export interface SelectOption {
@@ -30,7 +30,7 @@ export const resolveTypedCategory = (
 
 export const parseISODate = (iso: string): Date | null => {
   const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
+  if (!match || !isISODate(iso)) return null;
 
   const [, y, m, d] = match;
   return new Date(Number(y), Number(m) - 1, Number(d), 12, 0, 0);
@@ -44,7 +44,7 @@ export const dateToISO = (date: Date): string => {
 };
 
 export const monthKeyToDate = (month: string): Date | null => {
-  if (!month) return null;
+  if (!isMonthKey(month)) return null;
 
   const [year, m] = normalizeMonthKey(month).split('-').map(Number);
   return new Date(year, m - 1, 1, 12, 0, 0);
@@ -58,6 +58,20 @@ export const dateToMonthKey = (date: Date): string => {
 
 export const inputValueToDate = (value: Date | string | null): Date | null => {
   if (!value) return null;
+
+  if (typeof value === 'string') {
+    if (isISODate(value)) {
+      return parseISODate(value);
+    }
+
+    if (isMonthKey(value)) {
+      return monthKeyToDate(value);
+    }
+
+    if (/^\d{4}-\d{2}(-\d{2})?$/.test(value)) {
+      return null;
+    }
+  }
 
   const date = typeof value === 'string' ? new Date(value) : value;
   return date instanceof Date && !Number.isNaN(date.getTime()) ? date : null;

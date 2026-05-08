@@ -92,11 +92,23 @@ export function AddRecurringForm({
 
   const handleSubmit = () => {
     const amount = normalizeCurrencyAmount(recurring.amount);
+    const startMonth = normalizeMonthKey(recurring.startMonth, selectedMonth);
+    const endMonth = recurring.endMonth
+      ? normalizeMonthKey(recurring.endMonth, recurring.startMonth)
+      : undefined;
 
     if (!recurring.startMonth || !recurring.merchant.trim() || amount <= 0) {
       onError(
         'Monthly item needs a name and amount',
         'Add the name, amount, and start month before saving it.',
+      );
+      return;
+    }
+
+    if (endMonth && endMonth < startMonth) {
+      onError(
+        'Monthly item dates are reversed',
+        'End month must be the same as or after start month.',
       );
       return;
     }
@@ -112,13 +124,11 @@ export function AddRecurringForm({
       ),
       amount,
       type: recurring.type,
-      day: recurring.day,
+      day: clampDayOfMonth(recurring.day),
       account: recurring.account,
       active: true,
-      startMonth: normalizeMonthKey(recurring.startMonth, selectedMonth),
-      endMonth: recurring.endMonth
-        ? normalizeMonthKey(recurring.endMonth, recurring.startMonth)
-        : undefined,
+      startMonth,
+      endMonth,
       notes: recurring.notes.trim() || undefined,
     };
 

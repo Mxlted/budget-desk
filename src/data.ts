@@ -5,7 +5,7 @@ import type {
   SavingsGoal,
   Transaction,
 } from './types';
-import { parseFiniteNumber } from './amounts';
+import { normalizeCurrencyAmount, parseFiniteNumber } from './amounts';
 
 export const categoryCatalog: BudgetCategory[] = [
   {
@@ -78,9 +78,8 @@ export const categoryCatalog: BudgetCategory[] = [
 
 const accounts = ['Checking', 'Credit Card', 'Savings'];
 
-// Anchor to noon UTC so timezone offsets cannot push the date into a different
-// day/month than intended (an early-month local date can land in the previous
-// UTC month otherwise, which corrupts seed data and month bucketing).
+// Build sample dates from local date parts so timezone offsets cannot push
+// starter data into a different displayed month.
 const currentMonth = (() => {
   const now = new Date();
   const year = now.getFullYear();
@@ -90,8 +89,12 @@ const currentMonth = (() => {
 
 const makeDate = (monthOffset: number, day: number) => {
   const now = new Date();
-  const target = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + monthOffset, day, 12));
-  return target.toISOString().slice(0, 10);
+  const target = new Date(now.getFullYear(), now.getMonth() + monthOffset, day, 12, 0, 0);
+  const year = target.getFullYear();
+  const month = String(target.getMonth() + 1).padStart(2, '0');
+  const date = String(target.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${date}`;
 };
 
 const sampleTransactions: Transaction[] = [
@@ -288,16 +291,50 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const safeNumber = (value: unknown, fallback = 0) => parseFiniteNumber(value, fallback);
 
+const safeCurrency = (value: unknown, fallback = 0) =>
+  Math.max(0, normalizeCurrencyAmount(value, fallback));
+
 const safeString = (value: unknown, fallback = '') =>
   typeof value === 'string' ? value : fallback;
 
 const safeType = (value: unknown) => (value === 'income' ? 'income' : 'expense');
 
-const safeMonth = (value: unknown, fallback = currentMonth) =>
-  typeof value === 'string' && /^\d{4}-\d{2}$/.test(value) ? value : fallback;
+const parseSafeMonth = (value: unknown) => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const match = value.match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
+    return undefined;
+  }
+
+  const month = Number(match[2]);
+  return month >= 1 && month <= 12 ? value : undefined;
+};
+
+const safeMonth = (value: unknown, fallback = currentMonth) => parseSafeMonth(value) ?? fallback;
+
+const isSafeDate = (value: unknown): value is string => {
+  const match = typeof value === 'string' ? value.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day, 12, 0, 0);
+
+  return (
+    parsed.getFullYear() === year &&
+    parsed.getMonth() === month - 1 &&
+    parsed.getDate() === day
+  );
+};
 
 const safeDate = (value: unknown, fallback = currentMonth + '-01') =>
-  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
+  isSafeDate(value) ? value : fallback;
 
 const normalizeCategoryName = (value: unknown) => safeString(value).trim().replace(/\s+/g, ' ');
 
@@ -338,10 +375,7 @@ const sanitizeBudgets = (savedBudgets: Record<string, unknown>[]): BudgetCategor
       ...items,
       {
         category,
-        monthlyLimit: Math.max(
-          0,
-          safeNumber(saved.monthlyLimit, defaultBudget?.monthlyLimit ?? 0),
-        ),
+        monthlyLimit: safeCurrency(saved.monthlyLimit, defaultBudget?.monthlyLimit ?? 0),
         color: safeString(saved.color, defaultBudget?.color ?? 'gray.6'),
         keywords: safeKeywords(saved.keywords, defaultBudget?.keywords ?? []),
       },
@@ -408,7 +442,7 @@ export const sanitizeBudgetState = (value: unknown): BudgetState => {
             type === 'income'
               ? 'Income'
               : safeExpenseCategory(item.category, budgets, defaultExpenseCategory),
-          amount: Math.max(0, safeNumber(item.amount)),
+          amount: safeCurrency(item.amount),
           type,
           account: safeString(item.account, accounts[0]),
           notes: safeString(item.notes) || undefined,
@@ -419,6 +453,10 @@ export const sanitizeBudgetState = (value: unknown): BudgetState => {
   const recurring = Array.isArray(value.recurring)
     ? value.recurring.filter(isRecord).map((item, index): RecurringPurchase => {
         const type = safeType(item.type);
+        const startMonth = safeMonth(item.startMonth);
+        const parsedEndMonth = parseSafeMonth(item.endMonth);
+        const endMonth =
+          parsedEndMonth && parsedEndMonth >= startMonth ? parsedEndMonth : undefined;
 
         return {
           id: safeString(item.id, `stored-recurring-${index}`),
@@ -427,13 +465,13 @@ export const sanitizeBudgetState = (value: unknown): BudgetState => {
             type === 'income'
               ? 'Income'
               : safeExpenseCategory(item.category, budgets, defaultExpenseCategory),
-          amount: Math.max(0, safeNumber(item.amount)),
+          amount: safeCurrency(item.amount),
           type,
           day: Math.min(31, Math.max(1, Math.round(safeNumber(item.day, 1)))),
           account: safeString(item.account, accounts[0]),
           active: typeof item.active === 'boolean' ? item.active : true,
-          startMonth: safeMonth(item.startMonth),
-          endMonth: item.endMonth ? safeMonth(item.endMonth) : undefined,
+          startMonth,
+          endMonth,
           notes: safeString(item.notes) || undefined,
         };
       })
@@ -443,9 +481,9 @@ export const sanitizeBudgetState = (value: unknown): BudgetState => {
         (item, index): SavingsGoal => ({
           id: safeString(item.id, `stored-goal-${index}`),
           name: safeString(item.name, 'Savings goal'),
-          target: Math.max(0, safeNumber(item.target)),
-          saved: Math.max(0, safeNumber(item.saved)),
-          monthlyContribution: Math.max(0, safeNumber(item.monthlyContribution)),
+          target: safeCurrency(item.target),
+          saved: safeCurrency(item.saved),
+          monthlyContribution: safeCurrency(item.monthlyContribution),
           color: safeNeutralAccent(item.color),
         }),
       )
@@ -453,10 +491,10 @@ export const sanitizeBudgetState = (value: unknown): BudgetState => {
   const savedAccounts = Array.isArray(value.accounts)
     ? (value.accounts as string[]).filter((item) => typeof item === 'string' && item.trim())
     : [];
-  const plannedMonthlyIncome =
-    typeof value.plannedMonthlyIncome === 'number' && Number.isFinite(value.plannedMonthlyIncome)
-      ? value.plannedMonthlyIncome
-      : fallback.plannedMonthlyIncome;
+  const plannedMonthlyIncome = safeCurrency(
+    value.plannedMonthlyIncome,
+    fallback.plannedMonthlyIncome,
+  );
 
   return {
     transactions,

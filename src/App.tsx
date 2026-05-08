@@ -14,9 +14,11 @@ import {
 } from '@mantine/core';
 import { Notifications, notifications } from '@mantine/notifications';
 import { CalendarClock, Database, Plus, ReceiptText, Tags } from 'lucide-react';
+import { normalizeCurrencyAmount } from './amounts';
 import {
   budgetBars,
   categoryBreakdown,
+  categoryBreakdownForMonths,
   currentMonthKey,
   formatMonth,
   makeId,
@@ -24,6 +26,7 @@ import {
   preciseCurrency,
   summarizeMonth,
   trendData,
+  yearlySummary,
 } from './budgetMath';
 import { categoryCatalog, createEmptyBudgetState, sanitizeBudgetState } from './data';
 import { useBudgetState } from './hooks/useBudgetState';
@@ -124,6 +127,11 @@ function AppContent() {
   const breakdown = useMemo(() => categoryBreakdown(state, selectedMonth), [state, selectedMonth]);
   const bars = useMemo(() => budgetBars(state, selectedMonth), [state, selectedMonth]);
   const trend = useMemo(() => trendData(state, selectedMonth), [state, selectedMonth]);
+  const yearSummary = useMemo(() => yearlySummary(state, selectedMonth), [state, selectedMonth]);
+  const yearlyBreakdown = useMemo(
+    () => categoryBreakdownForMonths(state, yearSummary.months),
+    [state, yearSummary.months],
+  );
 
   const categoryOptions = useMemo(
     () => state.budgets.map((item) => ({ value: item.category, label: item.category })),
@@ -256,7 +264,7 @@ function AppContent() {
 
       const budget: BudgetCategory = {
         category,
-        monthlyLimit: Math.max(0, monthlyLimit),
+        monthlyLimit: Math.max(0, normalizeCurrencyAmount(monthlyLimit)),
         color: CUSTOM_CATEGORY_COLORS[state.budgets.length % CUSTOM_CATEGORY_COLORS.length],
         keywords: [],
       };
@@ -547,7 +555,9 @@ function AppContent() {
       setState((current) => ({
         ...current,
         budgets: current.budgets.map((item) =>
-          item.category === category ? { ...item, monthlyLimit } : item,
+          item.category === category
+            ? { ...item, monthlyLimit: Math.max(0, normalizeCurrencyAmount(monthlyLimit)) }
+            : item,
         ),
       }));
     },
@@ -559,7 +569,7 @@ function AppContent() {
       setState((current) => ({
         ...current,
         savingsGoals: current.savingsGoals.map((goal) =>
-          goal.id === id ? { ...goal, saved } : goal,
+          goal.id === id ? { ...goal, saved: Math.max(0, normalizeCurrencyAmount(saved)) } : goal,
         ),
       }));
     },
@@ -653,8 +663,14 @@ function AppContent() {
             <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="md">
               <MetricTile
                 label="Monthly income"
-                value={preciseCurrency.format(monthSummary.income || state.plannedMonthlyIncome)}
-                detail={monthSummary.income ? 'Actual' : 'Planned'}
+                value={preciseCurrency.format(monthSummary.income)}
+                detail={
+                  monthSummary.usesPlannedIncome
+                    ? 'Planned'
+                    : monthSummary.actualIncome > 0
+                      ? 'Actual'
+                      : 'No income'
+                }
                 tone="blue"
               />
               <MetricTile
@@ -719,6 +735,8 @@ function AppContent() {
                   monthSummary={monthSummary}
                   trend={trend}
                   breakdown={breakdown}
+                  yearlySummary={yearSummary}
+                  yearlyBreakdown={yearlyBreakdown}
                   bars={bars}
                   categoryLimitsEnabled={categoryLimitsEnabled}
                   hasCategoryLimitValues={hasCategoryLimitValues}

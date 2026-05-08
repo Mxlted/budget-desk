@@ -1,4 +1,11 @@
 import { categoryCatalog } from './data';
+import {
+  fromCurrencyCents,
+  normalizeCurrencyAmount,
+  parseFiniteNumber,
+  sumCurrency,
+  toCurrencyCents,
+} from './amounts';
 import type {
   BudgetCategory,
   BudgetState,
@@ -19,23 +26,51 @@ export const preciseCurrency = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 });
 
-export const currentMonthKey = () => new Date().toISOString().slice(0, 7);
+const formatMonthKeyFromParts = (year: number, monthNumber: number) =>
+  `${year}-${String(monthNumber).padStart(2, '0')}`;
 
-export const isMonthKey = (value: string | null | undefined): value is string => {
-  if (!value || !/^\d{4}-\d{2}$/.test(value)) {
+const formatDateKeyFromParts = (year: number, monthNumber: number, day: number) =>
+  `${formatMonthKeyFromParts(year, monthNumber)}-${String(day).padStart(2, '0')}`;
+
+export const currentMonthKey = () => {
+  const now = new Date();
+  return formatMonthKeyFromParts(now.getFullYear(), now.getMonth() + 1);
+};
+
+export const isMonthKey = (value: string | null | undefined): boolean => {
+  const match = value?.match(/^(\d{4})-(\d{2})$/);
+  if (!match) {
     return false;
   }
 
-  const parsed = new Date(`${value}-01T12:00:00`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 7) === value;
+  const month = Number(match[2]);
+  return month >= 1 && month <= 12;
 };
 
 export const normalizeMonthKey = (
   value: string | null | undefined,
   fallback: string = currentMonthKey(),
-): string => (isMonthKey(value) ? value : fallback);
+): string => (typeof value === 'string' && isMonthKey(value) ? value : fallback);
 
-export const toMonthKey = (date: string) => date.slice(0, 7);
+export const isISODate = (value: string | null | undefined): boolean => {
+  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return false;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(year, month - 1, day, 12, 0, 0);
+
+  return (
+    parsed.getFullYear() === year &&
+    parsed.getMonth() === month - 1 &&
+    parsed.getDate() === day
+  );
+};
+
+export const toMonthKey = (date: string) => (isISODate(date) ? date.slice(0, 7) : '');
 
 export const formatMonth = (month: string) =>
   new Date(`${normalizeMonthKey(month)}-01T12:00:00`).toLocaleDateString('en-US', {
@@ -60,23 +95,52 @@ const daysInMonth = (month: string) => {
 
 export const addMonths = (month: string, offset: number) => {
   const [year, monthIndex] = normalizeMonthKey(month).split('-').map(Number);
-  const date = new Date(year, monthIndex - 1 + offset, 1);
-  return date.toISOString().slice(0, 7);
+  const date = new Date(year, monthIndex - 1 + offset, 1, 12, 0, 0);
+  return formatMonthKeyFromParts(date.getFullYear(), date.getMonth() + 1);
 };
 
-export const monthRange = (endingMonth: string, months: number) =>
-  Array.from({ length: months }, (_, index) => addMonths(endingMonth, index - months + 1));
+export const monthRange = (endingMonth: string, months: number) => {
+  const count = Math.max(0, Math.floor(months));
+
+  return Array.from({ length: count }, (_, index) => addMonths(endingMonth, index - count + 1));
+};
+
+export const yearFromMonth = (month: string) => normalizeMonthKey(month).slice(0, 4);
+
+export const yearMonthRange = (month: string) => {
+  const year = yearFromMonth(month);
+
+  return Array.from({ length: 12 }, (_, index) => {
+    const monthNumber = String(index + 1).padStart(2, '0');
+    return `${year}-${monthNumber}`;
+  });
+};
+
+export const yearToDateMonthRange = (month: string) => {
+  const normalizedMonth = normalizeMonthKey(month);
+  const year = yearFromMonth(normalizedMonth);
+  const endingMonthNumber = Number(normalizedMonth.slice(5, 7));
+
+  return Array.from({ length: endingMonthNumber }, (_, index) => {
+    const monthNumber = String(index + 1).padStart(2, '0');
+    return `${year}-${monthNumber}`;
+  });
+};
 
 export const recurringAppliesToMonth = (purchase: RecurringPurchase, month: string) => {
   if (!purchase.active) {
     return false;
   }
 
-  if (purchase.startMonth > month) {
+  const normalizedMonth = normalizeMonthKey(month);
+  const startMonth = normalizeMonthKey(purchase.startMonth);
+  const endMonth = purchase.endMonth ? normalizeMonthKey(purchase.endMonth, startMonth) : undefined;
+
+  if (startMonth > normalizedMonth) {
     return false;
   }
 
-  return !purchase.endMonth || purchase.endMonth >= month;
+  return !endMonth || endMonth >= normalizedMonth;
 };
 
 export const materializeRecurring = (
@@ -86,14 +150,19 @@ export const materializeRecurring = (
   recurring
     .filter((item) => recurringAppliesToMonth(item, month))
     .map((item) => {
-      const day = String(Math.min(item.day, daysInMonth(month))).padStart(2, '0');
+      const normalizedMonth = normalizeMonthKey(month);
+      const day = Math.min(Math.max(1, Math.round(item.day)), daysInMonth(normalizedMonth));
 
       return {
-        id: `recurring-${item.id}-${month}`,
-        date: `${month}-${day}`,
+        id: `recurring-${item.id}-${normalizedMonth}`,
+        date: formatDateKeyFromParts(
+          Number(normalizedMonth.slice(0, 4)),
+          Number(normalizedMonth.slice(5, 7)),
+          day,
+        ),
         merchant: item.merchant,
         category: item.type === 'income' ? 'Income' : item.category,
-        amount: item.amount,
+        amount: normalizeCurrencyAmount(item.amount),
         type: item.type,
         account: item.account,
         notes: item.notes,
@@ -102,35 +171,54 @@ export const materializeRecurring = (
     });
 
 export const monthTransactions = (state: BudgetState, month: string) => {
-  const oneTime = state.transactions.filter((item) => toMonthKey(item.date) === month);
-  return [...oneTime, ...materializeRecurring(state.recurring, month)].sort((a, b) =>
+  const normalizedMonth = normalizeMonthKey(month);
+  const oneTime = state.transactions.filter((item) => toMonthKey(item.date) === normalizedMonth);
+
+  return [...oneTime, ...materializeRecurring(state.recurring, normalizedMonth)].sort((a, b) =>
     b.date.localeCompare(a.date),
   );
 };
 
 export const summarizeMonth = (state: BudgetState, month: string) => {
   const rows = monthTransactions(state, month);
-  const income = rows
-    .filter((item) => item.type === 'income')
-    .reduce((sum, item) => sum + item.amount, 0);
-  const expenses = rows
-    .filter((item) => item.type === 'expense')
-    .reduce((sum, item) => sum + item.amount, 0);
-  const recurring = rows
-    .filter((item) => item.source === 'recurring' && item.type === 'expense')
-    .reduce((sum, item) => sum + item.amount, 0);
-  const manualExpenses = rows
-    .filter((item) => item.source !== 'recurring' && item.type === 'expense')
-    .reduce((sum, item) => sum + item.amount, 0);
+  const actualIncome = sumCurrency(
+    rows.filter((item) => item.type === 'income').map((item) => item.amount),
+  );
+  const plannedIncome = Math.max(0, normalizeCurrencyAmount(state.plannedMonthlyIncome));
+  const usesPlannedIncome = actualIncome <= 0 && plannedIncome > 0;
+  const income = usesPlannedIncome ? plannedIncome : actualIncome;
+  const expenses = sumCurrency(
+    rows.filter((item) => item.type === 'expense').map((item) => item.amount),
+  );
+  const recurring = sumCurrency(
+    rows
+      .filter((item) => item.source === 'recurring' && item.type === 'expense')
+      .map((item) => item.amount),
+  );
+  const recurringIncome = sumCurrency(
+    rows
+      .filter((item) => item.source === 'recurring' && item.type === 'income')
+      .map((item) => item.amount),
+  );
+  const manualExpenses = sumCurrency(
+    rows
+      .filter((item) => item.source !== 'recurring' && item.type === 'expense')
+      .map((item) => item.amount),
+  );
+  const remaining = normalizeCurrencyAmount(income - expenses);
 
   return {
     rows,
+    actualIncome,
+    plannedIncome,
     income,
+    usesPlannedIncome,
     expenses,
     recurring,
+    recurringIncome,
     manualExpenses,
-    remaining: income - expenses,
-    savingsRate: income > 0 ? ((income - expenses) / income) * 100 : 0,
+    remaining,
+    savingsRate: income > 0 ? (remaining / income) * 100 : 0,
   };
 };
 
@@ -139,14 +227,35 @@ export const categoryBreakdown = (state: BudgetState, month: string) => {
   const totals = new Map<string, number>();
 
   rows.forEach((item) => {
-    totals.set(item.category, (totals.get(item.category) ?? 0) + item.amount);
+    totals.set(item.category, (totals.get(item.category) ?? 0) + toCurrencyCents(item.amount));
   });
 
   return Array.from(totals.entries())
-    .map(([category, value]) => ({
+    .map(([category, cents]) => ({
       category,
       name: category,
-      value: Number(value.toFixed(2)),
+      value: fromCurrencyCents(cents),
+      color: state.budgets.find((item) => item.category === category)?.color ?? 'gray.6',
+    }))
+    .sort((a, b) => b.value - a.value);
+};
+
+export const categoryBreakdownForMonths = (state: BudgetState, months: string[]) => {
+  const totals = new Map<string, number>();
+
+  months.forEach((month) => {
+    monthTransactions(state, month)
+      .filter((item) => item.type === 'expense')
+      .forEach((item) => {
+        totals.set(item.category, (totals.get(item.category) ?? 0) + toCurrencyCents(item.amount));
+      });
+  });
+
+  return Array.from(totals.entries())
+    .map(([category, cents]) => ({
+      category,
+      name: category,
+      value: fromCurrencyCents(cents),
       color: state.budgets.find((item) => item.category === category)?.color ?? 'gray.6',
     }))
     .sort((a, b) => b.value - a.value);
@@ -158,27 +267,90 @@ export const trendData = (state: BudgetState, selectedMonth: string) =>
 
     return {
       month: new Date(`${month}-01T12:00:00`).toLocaleDateString('en-US', { month: 'short' }),
-      Expenses: Number(summary.expenses.toFixed(2)),
-      Income: Number(summary.income.toFixed(2)),
-      Recurring: Number(summary.recurring.toFixed(2)),
+      Expenses: summary.expenses,
+      Income: summary.income,
+      Recurring: summary.recurring,
     };
   });
+
+export const yearlySummary = (state: BudgetState, selectedMonth: string) => {
+  const months = yearToDateMonthRange(selectedMonth);
+  const monthly = months.map((month) => {
+    const summary = summarizeMonth(state, month);
+
+    return {
+      month,
+      label: new Date(`${month}-01T12:00:00`).toLocaleDateString('en-US', { month: 'short' }),
+      income: summary.income,
+      actualIncome: summary.actualIncome,
+      plannedIncome: summary.plannedIncome,
+      usesPlannedIncome: summary.usesPlannedIncome,
+      expenses: summary.expenses,
+      recurring: summary.recurring,
+      recurringIncome: summary.recurringIncome,
+      remaining: summary.remaining,
+      transactionCount: summary.rows.length,
+    };
+  });
+
+  const income = sumCurrency(monthly.map((item) => item.income));
+  const actualIncome = sumCurrency(monthly.map((item) => item.actualIncome));
+  const plannedIncome = sumCurrency(monthly.map((item) => item.plannedIncome));
+  const expenses = sumCurrency(monthly.map((item) => item.expenses));
+  const recurring = sumCurrency(monthly.map((item) => item.recurring));
+  const recurringIncome = sumCurrency(monthly.map((item) => item.recurringIncome));
+  const remaining = normalizeCurrencyAmount(income - expenses);
+  const monthsWithActivity = monthly.filter((item) => item.transactionCount > 0);
+  const bestMonth = monthly.reduce((best, item) =>
+    item.remaining > best.remaining ? item : best,
+  );
+  const highestExpenseMonth = monthly.reduce((highest, item) =>
+    item.expenses > highest.expenses ? item : highest,
+  );
+  const monthCount = monthly.length;
+  const endingMonthLabel = monthly[monthly.length - 1]?.label ?? '';
+  const periodLabel =
+    monthCount === 12
+      ? yearFromMonth(selectedMonth)
+      : `Jan-${endingMonthLabel} ${yearFromMonth(selectedMonth)}`;
+
+  return {
+    year: yearFromMonth(selectedMonth),
+    periodLabel,
+    months,
+    monthCount,
+    monthly,
+    income,
+    actualIncome,
+    plannedIncome,
+    expenses,
+    recurring,
+    recurringIncome,
+    remaining,
+    savingsRate: income > 0 ? (remaining / income) * 100 : 0,
+    averageMonthlyExpenses: monthCount > 0 ? normalizeCurrencyAmount(expenses / monthCount) : 0,
+    activeMonthCount: monthsWithActivity.length,
+    bestMonth,
+    highestExpenseMonth,
+  };
+};
 
 export const budgetBars = (state: BudgetState, month: string) => {
   const breakdown = categoryBreakdown(state, month);
 
   return state.budgets
-    .filter((item) => item.monthlyLimit > 0)
     .map((budget) => {
       const spent = breakdown.find((item) => item.category === budget.category)?.value ?? 0;
+      const monthlyLimit = normalizeCurrencyAmount(budget.monthlyLimit);
 
       return {
         category: budget.category,
-        Spent: Number(spent.toFixed(2)),
-        Budget: budget.monthlyLimit,
+        Spent: normalizeCurrencyAmount(spent),
+        Budget: monthlyLimit,
         color: budget.color,
       };
     })
+    .filter((item) => item.Budget > 0)
     .sort((a, b) => b.Spent / b.Budget - a.Spent / a.Budget);
 };
 
@@ -192,21 +364,17 @@ export const detectCategory = (merchant: string, budgets: BudgetCategory[] = cat
   return match?.category ?? fallbackCategory;
 };
 
-const stripCurrency = (value: string) => {
-  const trimmed = value.trim().replace(/\((.*)\)/, '-$1');
-  const normalized = trimmed.replace(/[$,\s]/g, '');
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
 const normalizeHeader = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const parseDate = (value: string) => {
   const trimmed = value.trim();
 
   // ISO: 2024-03-15
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+  if (isISODate(trimmed)) {
     return trimmed;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return '';
   }
 
   // US: M/D/YYYY or MM/DD/YYYY (also tolerates dashes or dots, e.g. 03-15-2024)
@@ -215,10 +383,11 @@ const parseDate = (value: string) => {
     const [, m, d, y] = usMatch;
     const month = m.padStart(2, '0');
     const day = d.padStart(2, '0');
-    return `${y}-${month}-${day}`;
+    const isoDate = `${y}-${month}-${day}`;
+    return isISODate(isoDate) ? isoDate : '';
   }
 
-  // Last resort — locale-dependent, but anchor to noon UTC to avoid TZ drift
+  // Last resort is locale-dependent; read local date parts to avoid UTC month drift.
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
     return '';
@@ -227,7 +396,7 @@ const parseDate = (value: string) => {
   const year = parsed.getFullYear();
   const month = String(parsed.getMonth() + 1).padStart(2, '0');
   const day = String(parsed.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return formatDateKeyFromParts(year, Number(month), Number(day));
 };
 
 const parseDelimitedText = (text: string) => {
@@ -320,27 +489,36 @@ export const parseStatement = (
     const date = parseDate(row[dateColumn] ?? '');
     const merchant = row[merchantColumn]?.trim() || 'Imported transaction';
 
-    let signedAmount = 0;
+    let amount = 0;
+    let expense = false;
+
     if (amountColumn !== -1) {
-      signedAmount = stripCurrency(row[amountColumn] ?? '');
+      const signedAmount = normalizeCurrencyAmount(parseFiniteNumber(row[amountColumn] ?? ''));
+      amount = normalizeCurrencyAmount(Math.abs(signedAmount));
+      expense = statementType === 'credit-card' ? signedAmount > 0 : signedAmount < 0;
     } else {
-      const debit = debitColumn !== -1 ? stripCurrency(row[debitColumn] ?? '') : 0;
-      const credit = creditColumn !== -1 ? stripCurrency(row[creditColumn] ?? '') : 0;
-      signedAmount = credit - debit;
+      const debit =
+        debitColumn !== -1
+          ? normalizeCurrencyAmount(Math.abs(parseFiniteNumber(row[debitColumn] ?? '')))
+          : 0;
+      const credit =
+        creditColumn !== -1
+          ? normalizeCurrencyAmount(Math.abs(parseFiniteNumber(row[creditColumn] ?? '')))
+          : 0;
+      expense = debit > 0;
+      amount = debit > 0 ? debit : credit;
     }
 
-    if (!date || signedAmount === 0) {
+    if (!date || amount === 0) {
       return [];
     }
-
-    const expense = statementType === 'credit-card' ? signedAmount > 0 : signedAmount < 0;
 
     return [
       {
         date,
         merchant,
         category: expense ? detectCategory(merchant, budgets) : 'Income',
-        amount: Math.abs(signedAmount),
+        amount,
         type: expense ? 'expense' : 'income',
         account,
         notes: 'Imported from statement',

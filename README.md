@@ -13,6 +13,7 @@ Your data stays on your machine in browser storage. You can export it to a JSON 
 - Switch between separate local budget profiles on the same domain.
 - Move between months and see scheduled recurring items automatically.
 - Search and filter transactions by merchant, category, or account.
+- Review year-to-date income, spending, cash flow, and category mix.
 - Compare spending against category limits.
 - Import bank or credit-card statement CSV files and preview rows before saving them.
 - Track savings goal progress.
