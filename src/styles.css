@@ -112,6 +112,83 @@ body {
   grid-column: 1 / -1;
 }
 
+.yearly-panel {
+  overflow: hidden;
+}
+
+.yearly-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (min-width: 900px) {
+  .yearly-layout {
+    grid-template-columns: minmax(0, 1.3fr) minmax(280px, 1fr);
+    gap: 32px;
+  }
+}
+
+.yearly-stats-column {
+  min-width: 0;
+}
+
+.yearly-chart-column {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.yearly-chart-column > * {
+  width: 100%;
+}
+
+.yearly-metric {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--budget-border);
+  border-radius: 10px;
+  background: var(--budget-empty-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.yearly-metric--soft {
+  background: transparent;
+  border-style: dashed;
+}
+
+.yearly-metric-value {
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--budget-strong-text);
+  overflow-wrap: anywhere;
+}
+
+.yearly-metric-value--sm {
+  font-size: 1.05rem;
+}
+
+.yearly-empty {
+  min-height: 360px;
+}
+
+.donut-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.donut-center .mantine-DonutChart-root,
+.donut-center > div {
+  margin-inline: auto;
+}
+
 .form-panel {
   align-self: start;
 }
